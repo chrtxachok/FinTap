@@ -7,7 +7,32 @@ require('dotenv').config();
 // === ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ===
 const app = express();  // ← ЭТОЙ СТРОКИ НЕ ХВАТАЛО!
 
-// === MIDDLEWARE ===
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // Разрешаем запросы без origin
+  
+  // Разрешаем все Vercel preview-домены
+  if (origin.includes('.vercel.app')) return true;
+  
+  // Разрешаем локальную разработку
+  if (origin.includes('localhost')) return true;
+  
+  // Разрешаем конкретный продакшен-домен (если есть)
+  const productionOrigins = [
+    'https://fintap-mvp.vercel.app',
+    process.env.FRONTEND_URL
+  ].filter(Boolean);
+  
+  return productionOrigins.includes(origin);
+};
+
+app.use(cors({
+  origin: isAllowedOrigin,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+/*
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
   credentials: true,
@@ -15,8 +40,8 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
+*/
 
-// === SUPABASE CLIENT ===
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
