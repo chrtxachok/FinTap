@@ -7,6 +7,9 @@ require('dotenv').config();
 // === ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ===
 const app = express();  // ← ЭТОЙ СТРОКИ НЕ ХВАТАЛО!
 
+// === MIDDLEWARE (ОБЯЗАТЕЛЬНО!) ===
+app.use(express.json()); 
+
 const isAllowedOrigin = (origin) => {
   if (!origin) return true; // Разрешаем запросы без origin
   
