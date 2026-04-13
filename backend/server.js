@@ -52,9 +52,36 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    node_version: process.version
+    node_version: process.version,
+    uptime: process.uptime()
   });
 });
+
+// Проверка подключения к Supabase (не блокирующая)
+const checkSupabase = async () => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5 сек таймаут
+    
+    const { error } = await supabase
+      .from('users')
+      .select('count', { count: 'exact', head: true })
+      .signal(controller.signal);
+    
+    clearTimeout(timeout);
+    
+    if (error) {
+      console.warn('⚠️ Supabase connection warning:', error.message);
+    } else {
+      console.log('✅ Supabase connected');
+    }
+  } catch (err) {
+    console.warn('⚠️ Supabase check failed (non-blocking):', err.message);
+  }
+};
+
+// Запускаем проверку, но НЕ ждём её завершения
+checkSupabase(); // ← Без await!
 
 // === USERS ===
 // POST /api/v1/users - Регистрация
