@@ -8,32 +8,40 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// === MIDDLEWARE ===
-app.use(express.json()); // ← ОБЯЗАТЕЛЬНО для парсинга JSON
-app.use(async (req, res, next) => {
-  const timeout = setTimeout(() => {
-    res.status(408).json({ error: 'Request timeout' });
-  }, 10000); // 10 сек
-  
-  req.on('end', () => clearTimeout(timeout));
+// === MIDDLEWARE (ПОРЯДОК ВАЖЕН!) ===
+// 1. CORS — ДО всех маршрутов, с обработкой preflight
+app.use(cors({
+  origin: function(origin, callback) {
+    // Разрешаем запросы без origin (mobile apps, curl)
+    if (!origin) return callback(null, true);
+    
+    // Разрешаем все Vercel домены (preview + production)
+    if (origin.includes('.vercel.app')) return callback(null, true);
+    
+    // Разрешаем localhost для разработки
+    if (origin.includes('localhost')) return callback(null, true);
+    
+    // Разрешаем конкретные домены из env
+    const allowed = [process.env.FRONTEND_URL].filter(Boolean);
+    if (allowed.includes(origin)) return callback(null, true);
+    
+    // Блокируем всё остальное
+    console.log('❌ CORS blocked:', origin);
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+// 2. Парсинг JSON — ОБЯЗАТЕЛЬНО перед маршрутами
+app.use(express.json());
+
+// 3. Логирование запросов для отладки
+app.use((req, res, next) => {
+  console.log(`📥 ${req.method} ${req.path} from ${req.headers.origin || 'no-origin'}`);
   next();
 });
-
-// CORS — разрешаем Vercel preview-домены
-const isAllowedOrigin = (origin) => {
-  if (!origin) return true;
-  if (origin.includes('.vercel.app')) return true;
-  if (origin.includes('localhost')) return true;
-  const productionOrigins = ['https://fintap-mvp.vercel.app', process.env.FRONTEND_URL].filter(Boolean);
-  return productionOrigins.includes(origin);
-};
-
-app.use(cors({
-  origin: isAllowedOrigin,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
 
 // === SUPABASE CLIENT ===
 const supabase = createClient(
@@ -43,19 +51,27 @@ const supabase = createClient(
 
 // === HEALTH CHECK (ОБЯЗАТЕЛЬНО для Railway) ===
 app.get('/health', (req, res) => {
+  console.log('✅ Health check requested');
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    node_version: process.version
+    node_version: process.version,
+    env: process.env.NODE_ENV
   });
+});
+
+// === OPTIONS HANDLER для preflight запросов ===
+app.options('*', (req, res) => {
+  console.log('🔍 OPTIONS preflight:', req.path);
+  res.sendStatus(200);
 });
 
 // === USERS ===
 app.post('/api/v1/users', async (req, res) => {
+  console.log('📥 Registration request body:', req.body);
+  
   try {
     const { phone, inn, usn_mode, name, crm_id } = req.body;
-    
-    console.log('📥 Registration request:', { phone, inn, usn_mode });
     
     // Валидация
     if (!phone || phone.length < 10) {
@@ -94,7 +110,7 @@ app.post('/api/v1/users', async (req, res) => {
       .select();
     
     if (error) {
-      console.error('❌ Supabase insert error:', error);
+      console.error('❌ Supabase error:', error);
       return res.status(400).json({ error: error.message });
     }
     
@@ -124,8 +140,25 @@ app.get('/api/v1/users/:id', async (req, res) => {
 });
 
 // === ЗАПУСК СЕРВЕРА ===
+// Слушаем ВСЕ интерфейсы (0.0.0.0), а не только localhost
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌍 Listening on 0.0.0.0:${PORT}`);
+});
+
+// === ОБРАБОТЧИКИ ОШИБОК ПРОЦЕССА (чтобы не падал молча) ===
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  // Не завершаем процесс — даём Railway перезапустить
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Graceful shutdown для Railway
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  process.exit(0);
 });
