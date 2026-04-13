@@ -7,64 +7,40 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     phone: '',
-    smsCode: '',
     usnMode: 'доходы',
-    inn: ''
+    inn: '',
+    name: ''
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Шаг 1: Ввод телефона
-  const handleSendSMS = async () => {
-    if (!formData.phone.match(/^\d{11}$/)) {
-      setError('Введите корректный номер телефона');
+  // Шаг 1: Телефон + Имя
+  const handleStep1 = () => {
+    if (!formData.phone.match(/^\d{10,11}$/)) {
+      setError('Введите корректный номер (10-11 цифр)');
       return;
     }
-    setLoading(true);
-    try {
-      // TODO: Заменить на реальный API вызов
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setStep(2);
-      setError('');
-    } catch (err) {
-      setError('Не удалось отправить код');
-    } finally {
-      setLoading(false);
-    }
+    setError('');
+    setStep(2);
   };
 
-  // Шаг 2: Подтверждение SMS
-  const handleVerifySMS = async () => {
-    if (formData.smsCode.length !== 4) {
-      setError('Введите 4-значный код');
-      return;
-    }
-    setLoading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      setStep(3);
-      setError('');
-    } catch (err) {
-      setError('Неверный код');
-    } finally {
-      setLoading(false);
-    }
+  // Шаг 2: Выбор УСН
+  const handleStep2 = () => {
+    setStep(3);
   };
 
-  // Шаг 3: Выбор УСН
-  const handleSelectUSN = () => {
-    setStep(4);
-  };
-
-  // Шаг 4: Ввод ИНН → Регистрация
+  // Шаг 3: ИНН → Регистрация
   const handleRegister = async () => {
     if (!formData.inn.match(/^\d{12}$/)) {
-      setError('Введите корректный ИНН (12 цифр)');
+      setError('Введите корректный ИНН ИП (12 цифр)');
       return;
     }
+    
     setLoading(true);
+    setError('');
+    
     try {
-      // TODO: Реальный вызов API
+      // Вызов API бэкенда
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,18 +48,30 @@ export default function Onboarding() {
           phone: formData.phone,
           inn: formData.inn,
           usn_mode: formData.usnMode,
-          crm_id: null // ПР-08: поле для интеграции с CRM
+          name: formData.name || 'Пользователь',
+          crm_id: null,
+          crm_status: 'new'
         })
       });
       
-      if (!response.ok) throw new Error('Ошибка регистрации');
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Ошибка регистрации');
+      }
       
       const user = await response.json();
+      
+      // Сохраняем ID пользователя для последующих запросов
       localStorage.setItem('userId', user.id);
       localStorage.setItem('userINN', user.inn);
+      localStorage.setItem('usnMode', user.usn_mode);
+      
+      console.log('✅ Регистрация успешна:', user);
       navigate('/profile');
+      
     } catch (err) {
-      setError('Не удалось создать аккаунт');
+      console.error('❌ Ошибка регистрации:', err);
+      setError(err.message || 'Не удалось создать аккаунт');
     } finally {
       setLoading(false);
     }
@@ -95,7 +83,7 @@ export default function Onboarding() {
       <div style={styles.header}>
         <h1 style={styles.logo}>💰 ФинТап</h1>
         <div style={styles.progressBar}>
-          {[1, 2, 3, 4].map(n => (
+          {[1, 2, 3].map(n => (
             <div 
               key={n} 
               style={{
@@ -105,13 +93,13 @@ export default function Onboarding() {
             />
           ))}
         </div>
-        <p style={styles.progressText}>Шаг {step} из 4</p>
+        <p style={styles.progressText}>Шаг {step} из 3</p>
       </div>
 
       {/* Hero секция */}
       <div style={styles.hero}>
-        <h2>Учёт для селлеров за 2 минуты</h2>
-        <p>WB • Ozon • Тинькофф • Сбер</p>
+        <h2>Быстрый старт за 30 секунд</h2>
+        <p>Без SMS и сложных форм</p>
       </div>
 
       {/* Форма */}
@@ -123,41 +111,33 @@ export default function Onboarding() {
               type="tel"
               placeholder="+7 (___) ___-__-__"
               value={formData.phone}
-              onChange={e => setFormData({...formData, phone: e.target.value.replace(/\D/g, '')})}
+              onChange={e => setFormData({
+                ...formData, 
+                phone: e.target.value.replace(/\D/g, '')
+              })}
               style={styles.input}
             />
+            
+            <label style={styles.label}>Ваше имя (необязательно)</label>
+            <input
+              type="text"
+              placeholder="Аня"
+              value={formData.name}
+              onChange={e => setFormData({...formData, name: e.target.value})}
+              style={styles.input}
+            />
+            
             <button 
-              onClick={handleSendSMS} 
+              onClick={handleStep1} 
               disabled={loading}
               style={loading ? styles.buttonDisabled : styles.button}
             >
-              {loading ? 'Отправка...' : 'Получить код'}
+              Далее →
             </button>
           </>
         )}
 
         {step === 2 && (
-          <>
-            <label style={styles.label}>Код из SMS</label>
-            <input
-              type="text"
-              placeholder="____"
-              maxLength={4}
-              value={formData.smsCode}
-              onChange={e => setFormData({...formData, smsCode: e.target.value.replace(/\D/g, '')})}
-              style={styles.input}
-            />
-            <button 
-              onClick={handleVerifySMS} 
-              disabled={loading}
-              style={loading ? styles.buttonDisabled : styles.button}
-            >
-              {loading ? 'Проверка...' : 'Подтвердить'}
-            </button>
-          </>
-        )}
-
-        {step === 3 && (
           <>
             <label style={styles.label}>Ваша система налогообложения</label>
             <div style={styles.radioGroup}>
@@ -182,16 +162,17 @@ export default function Onboarding() {
                 <span>УСН «Доходы-Расходы» (15%)</span>
               </label>
             </div>
+            <p style={styles.hint}>Можно изменить позже в профиле</p>
             <button 
-              onClick={handleSelectUSN}
+              onClick={handleStep2}
               style={styles.button}
             >
-              Далее
+              Далее →
             </button>
           </>
         )}
 
-        {step === 4 && (
+        {step === 3 && (
           <>
             <label style={styles.label}>ИНН ИП</label>
             <input
@@ -199,10 +180,13 @@ export default function Onboarding() {
               placeholder="12 цифр"
               maxLength={12}
               value={formData.inn}
-              onChange={e => setFormData({...formData, inn: e.target.value.replace(/\D/g, '')})}
+              onChange={e => setFormData({
+                ...formData, 
+                inn: e.target.value.replace(/\D/g, '')
+              })}
               style={styles.input}
             />
-            <p style={styles.hint}>Проверяем через ФНС API 🔐</p>
+            <p style={styles.hint}>🔐 Данные защищены и не передаются третьим лицам</p>
             <button 
               onClick={handleRegister} 
               disabled={loading}
@@ -215,18 +199,29 @@ export default function Onboarding() {
 
         {error && <p style={styles.error}>{error}</p>}
       </div>
+
+      {/* Footer */}
+      <div style={styles.footer}>
+        <p style={styles.footerText}>
+          Регистрируясь, вы принимаете 
+          <a href="#" style={styles.link}> условия оферты</a>
+        </p>
+      </div>
     </div>
   );
 }
 
-// Стили (можно вынести в App.css)
+// Стили
 const styles = {
   container: {
     minHeight: '100vh',
     padding: '20px',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     maxWidth: '480px',
-    margin: '0 auto'
+    margin: '0 auto',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center'
   },
   header: {
     textAlign: 'center',
@@ -301,7 +296,8 @@ const styles = {
     border: 'none',
     borderRadius: '12px',
     cursor: 'pointer',
-    transition: 'background-color 0.2s'
+    transition: 'background-color 0.2s',
+    marginTop: '8px'
   },
   buttonDisabled: {
     padding: '14px 20px',
@@ -322,6 +318,22 @@ const styles = {
     color: '#DC2626',
     fontSize: '14px',
     margin: 0,
+    textAlign: 'center',
+    backgroundColor: '#FEF2F2',
+    padding: '8px',
+    borderRadius: '6px'
+  },
+  footer: {
+    marginTop: '32px',
     textAlign: 'center'
+  },
+  footerText: {
+    fontSize: '12px',
+    color: '#9CA3AF',
+    margin: 0
+  },
+  link: {
+    color: '#4F46E5',
+    textDecoration: 'none'
   }
 };
