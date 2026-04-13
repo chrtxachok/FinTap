@@ -40,6 +40,8 @@ export default function Onboarding() {
     setError('');
     
     try {
+      console.log('Backend URL:', import.meta.env.VITE_BACKEND_URL);
+      console.log('Full URL:', `${import.meta.env.VITE_BACKEND_URL}/api/v1/users`);
       // Вызов API бэкенда
       const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/users`, {
         method: 'POST',
