@@ -10,6 +10,14 @@ const PORT = process.env.PORT || 3000;
 
 // === MIDDLEWARE ===
 app.use(express.json()); // ← ОБЯЗАТЕЛЬНО для парсинга JSON
+app.use(async (req, res, next) => {
+  const timeout = setTimeout(() => {
+    res.status(408).json({ error: 'Request timeout' });
+  }, 10000); // 10 сек
+  
+  req.on('end', () => clearTimeout(timeout));
+  next();
+});
 
 // CORS — разрешаем Vercel preview-домены
 const isAllowedOrigin = (origin) => {
