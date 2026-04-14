@@ -135,9 +135,17 @@ export default function Dashboard() {
     <div style={styles.page}>
       {/* Header */}
       <header style={styles.header}>
-        <div style={styles.logo}>📦 ФинТап</div>
+        <div style={styles.logoWrap}>
+          <div style={styles.logoMark}>FT</div>
+          <div>
+            <div style={styles.logo}>ФинТап</div>
+            <div style={styles.logoSub}>Панель предпринимателя</div>
+          </div>
+        </div>
         <div style={styles.headerRight}>
-          <button style={styles.helpButton}>Помощь</button>
+          <button style={styles.helpButton} onClick={() => alert('Скоро добавим подсказки и FAQ')}>
+            Подсказки
+          </button>
           <button onClick={() => navigate('/profile')} style={styles.profileButton}>
             👤 {userName}
           </button>
@@ -163,7 +171,7 @@ export default function Dashboard() {
               <p style={styles.metricValue}>{formatMoney(metrics.net_today)}</p>
               <div style={styles.breakdown}>
                 <div style={styles.breakdownRow}>
-                  <span>WB:</span>
+                  <span>Доход:</span>
                   <span>{formatMoney(metrics.wb_sales)}</span>
                 </div>
                 <div style={{...styles.breakdownRow, color: '#EF4444'}}>
@@ -177,7 +185,7 @@ export default function Dashboard() {
             </div>
 
             {/* НАЛОГ */}
-            <div style={styles.metricCard}>
+            <div style={{...styles.metricCard, ...styles.metricCardAccent}}>
               <h3 style={styles.metricTitle}>НАЛОГ</h3>
               <p style={styles.metricValue}>{formatMoney(metrics.tax_estimate)}</p>
               <button onClick={handleReserveTax} style={styles.reserveButton}>
@@ -300,7 +308,7 @@ export default function Dashboard() {
 const styles = {
   page: {
     minHeight: '100vh',
-    backgroundColor: '#F9FAFB',
+    background: 'radial-gradient(1200px 500px at 20% 0%, rgba(79,70,229,0.14), rgba(255,255,255,0) 55%), radial-gradient(900px 500px at 90% 10%, rgba(16,185,129,0.10), rgba(255,255,255,0) 60%), #F9FAFB',
     display: 'flex',
     flexDirection: 'column'
   },
@@ -314,13 +322,41 @@ const styles = {
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '16px 20px',
-    backgroundColor: 'white',
-    borderBottom: '1px solid #E5E7EB'
+    background: 'rgba(255,255,255,0.75)',
+    borderBottom: '1px solid rgba(229,231,235,0.9)',
+    backdropFilter: 'blur(10px)',
+    position: 'sticky',
+    top: 0,
+    zIndex: 50
+  },
+  logoWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px'
+  },
+  logoMark: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '10px',
+    background: 'linear-gradient(135deg, #4F46E5 0%, #10B981 100%)',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'white',
+    fontWeight: '800',
+    letterSpacing: '0.5px',
+    fontSize: '13px'
   },
   logo: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: '#1F2937'
+    fontSize: '16px',
+    fontWeight: '800',
+    color: '#111827',
+    lineHeight: 1.1
+  },
+  logoSub: {
+    fontSize: '12px',
+    color: '#6B7280',
+    lineHeight: 1.1,
+    marginTop: '2px'
   },
   headerRight: {
     display: 'flex',
@@ -330,17 +366,18 @@ const styles = {
   helpButton: {
     padding: '6px 12px',
     fontSize: '14px',
-    border: '1px solid #D1D5DB',
+    border: '1px solid rgba(209,213,219,0.9)',
     borderRadius: '6px',
-    background: 'white',
-    cursor: 'pointer'
+    background: 'rgba(255,255,255,0.9)',
+    cursor: 'pointer',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
   },
   profileButton: {
     padding: '6px 12px',
     fontSize: '14px',
-    border: '1px solid #D1D5DB',
-    borderRadius: '6px',
-    background: 'white',
+    border: '1px solid rgba(209,213,219,0.9)',
+    borderRadius: '999px',
+    background: 'rgba(255,255,255,0.9)',
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
@@ -370,10 +407,16 @@ const styles = {
     gap: '12px'
   },
   metricCard: {
-    backgroundColor: 'white',
-    border: '2px dashed #D1D5DB',
-    borderRadius: '8px',
-    padding: '16px'
+    background: 'rgba(255,255,255,0.9)',
+    border: '1px solid rgba(229,231,235,0.85)',
+    borderRadius: '14px',
+    padding: '16px',
+    boxShadow: '0 10px 25px rgba(17,24,39,0.06)',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  metricCardAccent: {
+    borderColor: 'rgba(79,70,229,0.30)'
   },
   metricTitle: {
     fontSize: '12px',
@@ -404,9 +447,9 @@ const styles = {
     width: '100%',
     padding: '8px',
     fontSize: '13px',
-    border: '1px dashed #D1D5DB',
-    borderRadius: '6px',
-    background: 'white',
+    border: '1px solid rgba(79,70,229,0.25)',
+    borderRadius: '10px',
+    background: 'linear-gradient(180deg, rgba(238,242,255,0.9) 0%, rgba(255,255,255,0.9) 100%)',
     cursor: 'pointer',
     color: '#4B5563'
   },
@@ -416,15 +459,16 @@ const styles = {
     gap: '12px'
   },
   actionButton: {
-    backgroundColor: 'white',
-    border: '2px dashed #D1D5DB',
-    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.9)',
+    border: '1px solid rgba(229,231,235,0.85)',
+    borderRadius: '14px',
     padding: '20px 12px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     gap: '8px',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    boxShadow: '0 10px 25px rgba(17,24,39,0.06)'
   },
   actionIcon: {
     fontSize: '24px'
@@ -435,10 +479,11 @@ const styles = {
     textAlign: 'center'
   },
   activityCard: {
-    backgroundColor: 'white',
-    border: '2px dashed #D1D5DB',
-    borderRadius: '8px',
-    padding: '12px'
+    background: 'rgba(255,255,255,0.9)',
+    border: '1px solid rgba(229,231,235,0.85)',
+    borderRadius: '14px',
+    padding: '12px',
+    boxShadow: '0 10px 25px rgba(17,24,39,0.06)'
   },
   emptyState: {
     textAlign: 'center',
@@ -515,8 +560,9 @@ const styles = {
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'white',
-    borderTop: '1px solid #E5E7EB',
+    background: 'rgba(255,255,255,0.85)',
+    borderTop: '1px solid rgba(229,231,235,0.9)',
+    backdropFilter: 'blur(10px)',
     display: 'flex',
     justifyContent: 'space-around',
     padding: '8px 0',
@@ -535,8 +581,9 @@ const styles = {
     fontSize: '11px'
   },
   navActive: {
-    color: '#1F2937',
-    backgroundColor: '#1F2937'
+    color: '#111827',
+    background: 'linear-gradient(180deg, rgba(238,242,255,0.95) 0%, rgba(255,255,255,0.60) 100%)',
+    borderRadius: '12px'
   },
   navIcon: {
     fontSize: '20px'

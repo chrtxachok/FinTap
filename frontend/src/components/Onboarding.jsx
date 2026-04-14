@@ -11,9 +11,41 @@ export default function Onboarding() {
   const [existingUser, setExistingUser] = useState(null);
 
   const normalizePhone = (raw) => {
-    const digits = String(raw || '').replace(/\D/g, '');
-    if (digits.length === 10) return `7${digits}`;
+    let digits = String(raw || '').replace(/\D/g, '');
+
+    // Частая проблема при маске: в значение попадает "+7" и номер уже с "7" → "77..."
+    if (digits.startsWith('77')) digits = digits.slice(1);
+
+    // 8XXXXXXXXXX -> 7XXXXXXXXXX
+    if (digits.startsWith('8') && digits.length >= 11) digits = `7${digits.slice(1)}`;
+
+    // локальный формат (10 цифр) -> 7XXXXXXXXXX
+    if (digits.length === 10) digits = `7${digits}`;
+
+    // режем лишнее
+    if (digits.length > 11) digits = digits.slice(0, 11);
+
     return digits;
+  };
+
+  const formatPhone = (phoneDigits) => {
+    const d = String(phoneDigits || '').replace(/\D/g, '');
+    if (!d) return '';
+    if (!d.startsWith('7')) return d;
+
+    const p = d.slice(1); // national part
+    const a = p.slice(0, 3);
+    const b = p.slice(3, 6);
+    const c = p.slice(6, 8);
+    const e = p.slice(8, 10);
+
+    let out = '+7';
+    if (a) out += ` (${a}`;
+    if (a.length === 3) out += ')';
+    if (b) out += ` ${b}`;
+    if (c) out += `-${c}`;
+    if (e) out += `-${e}`;
+    return out;
   };
 
   // Проверка существующего пользователя при вводе телефона
@@ -113,7 +145,9 @@ export default function Onboarding() {
             className="input" 
             type="tel" 
             placeholder="+7 (___) ___-__-__" 
-            value={form.phone ? `+7 (${form.phone.slice(1, 4)}) ${form.phone.slice(4, 7)}-${form.phone.slice(7, 9)}-${form.phone.slice(9, 11)}` : ''}
+            inputMode="numeric"
+            autoComplete="tel"
+            value={formatPhone(form.phone)}
             onChange={e => handlePhoneChange(e.target.value)}
           />
           
