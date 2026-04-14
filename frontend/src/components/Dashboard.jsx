@@ -39,10 +39,22 @@ export default function Dashboard() {
       .filter(tx => tx.category === 'expense')
       .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     
-    const net = income - expense;
-    const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
-    const tax = net > 0 ? net * usnRate : 0;
-    
+    const commission = Math.round(income * 0.18);
+  
+  // Чистый доход = доходы - расходы - комиссия
+  const netIncome = income - expense - commission;
+  
+  // Налог УСН
+  const usnMode = localStorage.getItem('usnMode') || 'доходы';
+  const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
+  const taxBase = usnMode === 'доходы_расходы' ? netIncome : income;
+  const tax = taxBase > 0 ? Math.round(taxBase * usnRate) : 0;
+  
+  // Остаток = чистый доход - налог (то, что можно потратить)
+  const balance = netIncome - tax;
+  
+  // WB продажи (примерно все доходы)
+  const wbSales = income;
     // Обновляем метрики, сохраняя предыдущие значения если новые нулевые
     setMetrics(prev => ({
       today_income: income || prev.today_income,
@@ -173,7 +185,7 @@ export default function Dashboard() {
               <p style={styles.metricValue}>{formatMoney(metrics.net_today)}</p>
               <div style={styles.breakdown}>
                 <div style={styles.breakdownRow}>
-                  <span>WB:</span>
+                  <span>Доход:</span>
                   <span>{formatMoney(metrics.wb_sales)}</span>
                 </div>
                 <div style={{...styles.breakdownRow, color: '#EF4444'}}>

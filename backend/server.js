@@ -31,7 +31,34 @@ app.get('/health', (req, res) => {
 });
 
 // === USERS ===
-// Регистрация (упрощённая)
+
+// POST /api/v1/users/check - Проверка существования пользователя
+app.post('/api/v1/users/check', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    
+    if (!phone || phone.length < 10) {
+      return res.status(400).json({ error: 'Некорректный телефон' });
+    }
+    
+    const {  user, error } = await supabase
+      .from('users')
+      .select('id, phone, inn, usn_mode, name')
+      .eq('phone', phone)
+      .single();
+    
+    if (error || !user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    
+    res.json(user);
+  } catch (err) {
+    console.error('Check user error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Обновить endpoint регистрации (добавить проверку дубликатов):
 app.post('/api/v1/users', async (req, res) => {
   try {
     const { phone, inn, usn_mode, name } = req.body;
@@ -41,13 +68,28 @@ app.post('/api/v1/users', async (req, res) => {
     if (!inn || inn.length !== 12) return res.status(400).json({ error: 'ИНН должен содержать 12 цифр' });
     
     // Проверка на дубликат
-    const {  existing } = await supabase.from('users').select('id').eq('phone', phone).single();
-    if (existing) return res.status(200).json({ ...existing, message: 'Пользователь уже существует' });
+    const {  existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('phone', phone)
+      .single();
+    
+    if (existing) {
+      return res.status(400).json({ 
+        error: 'Пользователь с таким телефоном уже существует. Используйте быстрый вход.' 
+      });
+    }
     
     // Создание
     const {  data, error } = await supabase
       .from('users')
-      .insert([{ phone, inn, usn_mode, name: name || 'Пользователь', is_active: true }])
+      .insert([{ 
+        phone, 
+        inn, 
+        usn_mode, 
+        name: name || 'Пользователь', 
+        is_active: true 
+      }])
       .select();
     
     if (error) throw error;
