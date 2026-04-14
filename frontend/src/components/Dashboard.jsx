@@ -9,14 +9,14 @@ export default function Dashboard() {
   const userName = localStorage.getItem('userName') || 'Пользователь';
   const usnMode = localStorage.getItem('usnMode') || 'доходы';
   
-  // Инициализируем состояние с нулевыми значениями
+  // Инициализация состояния
   const [metrics, setMetrics] = useState({
     today_income: 0,
     today_expense: 0,
+    commission: 0,
     net_today: 0,
     tax_estimate: 0,
     wb_sales: 0,
-    commission: 0,
     balance: 0,
     transaction_count: 0
   });
@@ -25,110 +25,88 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState(null);
+  const [initialized, setInitialized] = useState(false);
 
-  // Функция расчета метрик из транзакций (стабильная ссылка)
+  // Функция расчета метрик из транзакций
   const calculateMetricsFromTransactions = useCallback((txList) => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayTxs = txList.filter(tx => tx.date === today);
-    
-    const income = todayTxs
-      .filter(tx => tx.category === 'income')
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-    
-    const expense = todayTxs
-      .filter(tx => tx.category === 'expense')
-      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
-    
-    const commission = Math.round(income * 0.18);
-  
-  // Чистый доход = доходы - расходы - комиссия
-  const netIncome = income - expense - commission;
-  
-  // Налог УСН
-  const usnMode = localStorage.getItem('usnMode') || 'доходы';
-  const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
-  const taxBase = usnMode === 'доходы_расходы' ? netIncome : income;
-  const tax = taxBase > 0 ? Math.round(taxBase * usnRate) : 0;
-  
-  // Остаток = чистый доход - налог (то, что можно потратить)
-  const balance = netIncome - tax;
-  
-  // WB продажи (примерно все доходы)
-  const wbSales = income;
-    // Обновляем метрики, сохраняя предыдущие значения если новые нулевые
-    setMetrics(prev => ({
-      today_income: income || prev.today_income,
-      today_expense: expense || prev.today_expense,
-      net_today: net || prev.net_today,
-      tax_estimate: tax || prev.tax_estimate,
-      wb_sales: income || prev.wb_sales,
-      commission: Math.round((income || prev.wb_sales) * 0.18),
-      balance: net || prev.balance,
-      transaction_count: txList.length || prev.transaction_count
-    }));
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const todayTxs = txList.filter(tx => tx.date === today);
+      
+      const income = todayTxs
+        .filter(tx => tx.category === 'income')
+        .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+      
+      const expense = todayTxs
+        .filter(tx => tx.category === 'expense')
+        .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+      
+      const commission = Math.round(income * 0.18);
+      const netIncome = income - expense - commission;
+      
+      const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
+      const taxBase = usnMode === 'доходы_расходы' ? netIncome : income;
+      const tax = taxBase > 0 ? Math.round(taxBase * usnRate) : 0;
+      
+      const balance = netIncome - tax;
+      
+      setMetrics({
+        today_income: income,
+        today_expense: expense,
+        commission: commission,
+        net_today: netIncome,
+        tax_estimate: tax,
+        wb_sales: income,
+        balance: balance,
+        transaction_count: txList.length
+      });
+    } catch (err) {
+      console.error('Calculate metrics error:', err);
+    }
   }, [usnMode]);
 
-  // Функция загрузки данных (стабильная ссылка)
+  // Функция загрузки данных
   const loadData = useCallback(async () => {
     if (!userId) { 
       navigate('/'); 
       return; 
     }
     
-    // Не показываем лоадер при авто-обновлении, только при первой загрузке
-    if (metrics.today_income === 0 && transactions.length === 0) {
-      setLoading(true);
-    }
-    
-    setError(null);
-    
     try {
-      // Загружаем транзакции
       const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
       if (tRes.ok) {
         const txData = await tRes.json();
-        setTransactions(txData || []);
-        
-        // Считаем метрики из транзакций
-        if (txData && txData.length > 0) {
-          calculateMetricsFromTransactions(txData);
-        }
-      } else {
-        console.warn('Failed to load transactions:', tRes.status);
+        const transactionsList = txData || [];
+        setTransactions(transactionsList);
+        calculateMetricsFromTransactions(transactionsList);
       }
+      setInitialized(true);
     } catch (err) {
       console.error('Load error:', err);
-      setError('Не удалось загрузить данные. Проверьте подключение.');
-      // НЕ сбрасываем метрики при ошибке — сохраняем кэш!
+      setError('Не удалось загрузить данные');
+      setInitialized(true);
     } finally {
       setLoading(false);
     }
-  }, [userId, navigate, calculateMetricsFromTransactions, metrics.today_income, transactions.length]);
+  }, [userId, navigate, calculateMetricsFromTransactions]);
 
-  // Загрузка при монтировании и авто-обновление
+  // Загрузка при монтировании
   useEffect(() => { 
-    loadData(); 
-    
-    // Авто-обновление каждые 60 секунд (не слишком часто!)
-    const interval = setInterval(loadData, 60000);
-    
-    return () => {
-      clearInterval(interval);
-    };
+    loadData();
   }, [loadData]);
 
-  // Мгновенное обновление метрик при добавлении транзакции
-  const handleAddTransaction = (newTransaction) => {
-    // Добавляем новую транзакцию в начало списка
+  // Обработка добавления транзакции
+  const handleAddTransaction = useCallback((newTransaction) => {
+    if (!newTransaction) return;
+    
     setTransactions(prev => {
       const newTransactions = [newTransaction, ...prev];
-      // Пересчитываем метрики с новыми данными
       calculateMetricsFromTransactions(newTransactions);
       return newTransactions;
     });
     
     setShowAdd(false);
-  };
+  }, [calculateMetricsFromTransactions]);
 
   const formatMoney = (n) => new Intl.NumberFormat('ru-RU', { 
     style: 'currency', 
@@ -143,7 +121,7 @@ export default function Dashboard() {
   };
 
   // Показываем лоадер только при первой загрузке
-  if (loading && metrics.today_income === 0 && transactions.length === 0) {
+  if (loading && !initialized) {
     return (
       <div style={styles.page}>
         <div style={{...styles.container, textAlign: 'center', paddingTop: 40}}>
@@ -320,7 +298,6 @@ export default function Dashboard() {
 }
 
 const styles = {
-  // ... (все стили остаются такими же как были)
   page: {
     minHeight: '100vh',
     backgroundColor: '#F9FAFB',
