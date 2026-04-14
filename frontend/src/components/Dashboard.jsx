@@ -6,36 +6,54 @@ import AddTransaction from './AddTransaction';
 export default function Dashboard() {
   const navigate = useNavigate();
   const userId = localStorage.getItem('userId');
-  const userName = localStorage.getItem('userName') || 'Аня';
+  const userName = localStorage.getItem('userName') || 'Пользователь';
   
   const [metrics, setMetrics] = useState({
-    today_income: 24500,
-    wb_sales: 30000,
-    commission: 5500,
-    tax: 1470,
-    balance: 185320,
-    lastSync: new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'})
+    today_income: 0,
+    today_expense: 0,
+    net_today: 0,
+    tax_estimate: 0,
+    wb_sales: 0,
+    commission: 0,
+    balance: 0,
+    transaction_count: 0
   });
-  const [transactions, setTransactions] = useState([
-    { id: '1', date: '2026-03-05', description: 'WB синхронизация', amount: 30000, status: 'confirmed' },
-    { id: '2', date: '2026-03-05', description: 'Счёт №154', amount: 2500, status: 'confirmed' },
-  ]);
-  const [loading, setLoading] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
   const loadData = async () => {
-    if (!userId) { navigate('/'); return; }
+    if (!userId) { 
+      navigate('/'); 
+      return; 
+    }
+    
     setLoading(true);
     
     try {
-      const [mRes, tRes] = await Promise.all([
-        fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/dashboard/${userId}`),
-        fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`)
-      ]);
+      // Загружаем метрики дашборда
+      const mRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/dashboard/${userId}`);
+      if (mRes.ok) {
+        const metricsData = await mRes.json();
+        setMetrics({
+          today_income: metricsData.today_income || 0,
+          today_expense: metricsData.today_expense || 0,
+          net_today: metricsData.net_today || 0,
+          tax_estimate: metricsData.tax_estimate || 0,
+          wb_sales: metricsData.wb_sales || metricsData.today_income || 0,
+          commission: metricsData.commission || Math.round((metricsData.today_income || 0) * 0.18),
+          balance: metricsData.balance || 0,
+          transaction_count: metricsData.transaction_count || 0
+        });
+      }
       
-      if (mRes.ok) setMetrics(await mRes.json());
-      if (tRes.ok) setTransactions(await tRes.json());
+      // Загружаем транзакции
+      const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
+      if (tRes.ok) {
+        const txData = await tRes.json();
+        setTransactions(txData || []);
+      }
     } catch (err) {
       console.error('Load error:', err);
     } finally {
@@ -43,15 +61,34 @@ export default function Dashboard() {
     }
   };
 
-  useEffect(() => { loadData(); }, [userId, navigate]);
+  // Загрузка при монтировании и авто-обновление каждые 30 секунд
+  useEffect(() => { 
+    loadData(); 
+    const interval = setInterval(loadData, 30000); // Авто-обновление каждые 30 сек
+    return () => clearInterval(interval);
+  }, [userId, navigate]);
 
-  const formatMoney = (n) => new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n || 0);
+  const formatMoney = (n) => new Intl.NumberFormat('ru-RU', { 
+    style: 'currency', 
+    currency: 'RUB', 
+    maximumFractionDigits: 0 
+  }).format(n || 0);
 
   const handleReserveTax = () => {
-    alert(`Зарезервировать ${formatMoney(metrics.tax)} на налог?`);
+    if (window.confirm(`Зарезервировать ${formatMoney(metrics.tax_estimate)} на налог?`)) {
+      alert('Функция резервирования будет доступна после подключения банка');
+    }
   };
 
-  if (loading && !metrics.today_income) return <div className="container text-center" style={{paddingTop: 40}}>Загрузка...</div>;
+  if (loading && metrics.today_income === 0) {
+    return (
+      <div style={styles.page}>
+        <div style={{...styles.container, textAlign: 'center', paddingTop: 40}}>
+          <div style={styles.loader}>Загрузка данных...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
@@ -74,7 +111,7 @@ export default function Dashboard() {
             {/* СЕГОДНЯ */}
             <div style={styles.metricCard}>
               <h3 style={styles.metricTitle}>СЕГОДНЯ</h3>
-              <p style={styles.metricValue}>{formatMoney(metrics.today_income)}</p>
+              <p style={styles.metricValue}>{formatMoney(metrics.net_today)}</p>
               <div style={styles.breakdown}>
                 <div style={styles.breakdownRow}>
                   <span>WB:</span>
@@ -84,13 +121,16 @@ export default function Dashboard() {
                   <span>Комиссия:</span>
                   <span>-{formatMoney(metrics.commission)} ↓</span>
                 </div>
+                <div style={{...styles.breakdownRow, color: '#6B7280', fontSize: '11px'}}>
+                  <span>Транзакций: {metrics.transaction_count}</span>
+                </div>
               </div>
             </div>
 
             {/* НАЛОГ */}
             <div style={styles.metricCard}>
               <h3 style={styles.metricTitle}>НАЛОГ</h3>
-              <p style={styles.metricValue}>{formatMoney(metrics.tax)}</p>
+              <p style={styles.metricValue}>{formatMoney(metrics.tax_estimate)}</p>
               <button onClick={handleReserveTax} style={styles.reserveButton}>
                 ⊕ ОТЛОЖИТЬ
               </button>
@@ -128,21 +168,46 @@ export default function Dashboard() {
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>[ ПОСЛЕДНЯЯ АКТИВНОСТЬ ]</h2>
           <div style={styles.activityCard}>
-            {transactions.slice(0, 3).map(tx => (
-              <div key={tx.id} style={styles.activityItem}>
-                <div style={styles.activityLeft}>
-                  <span style={styles.activityIcon}>📄</span>
-                  <span>{tx.description}</span>
-                </div>
-                <div style={styles.activityRight}>
-                  <span style={styles.activityAmount}>{formatMoney(tx.amount)}</span>
-                  <span style={styles.checkmark}>✓</span>
-                </div>
+            {transactions.length === 0 ? (
+              <div style={styles.emptyState}>
+                <p style={styles.emptyText}>Нет транзакций</p>
+                <button onClick={() => setShowAdd(true)} style={styles.addFirstBtn}>
+                  + Добавить первую
+                </button>
               </div>
-            ))}
-            <button style={styles.showAllButton}>
-              ПОКАЗАТЬ ВСЁ ∨
-            </button>
+            ) : (
+              <>
+                {transactions.slice(0, 5).map(tx => (
+                  <div key={tx.id} style={styles.activityItem}>
+                    <div style={styles.activityLeft}>
+                      <span style={styles.activityIcon}>📄</span>
+                      <div>
+                        <div style={styles.activityDescription}>
+                          {tx.counterparty || 'Не указано'}
+                        </div>
+                        <div style={styles.activityDate}>
+                          {new Date(tx.date).toLocaleDateString('ru-RU')}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={styles.activityRight}>
+                      <span style={{
+                        ...styles.activityAmount,
+                        color: tx.category === 'income' ? '#10B981' : '#EF4444'
+                      }}>
+                        {tx.category === 'income' ? '+' : '-'}{formatMoney(tx.amount)}
+                      </span>
+                      <span style={styles.checkmark}>✓</span>
+                    </div>
+                  </div>
+                ))}
+                {transactions.length > 5 && (
+                  <button style={styles.showAllButton}>
+                    ПОКАЗАТЬ ВСЁ ∨
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </section>
       </main>
@@ -186,6 +251,11 @@ const styles = {
     display: 'flex',
     flexDirection: 'column'
   },
+  container: {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    width: '100%'
+  },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -226,7 +296,10 @@ const styles = {
   main: {
     flex: 1,
     padding: '20px',
-    paddingBottom: '100px'
+    paddingBottom: '100px',
+    maxWidth: '1200px',
+    margin: '0 auto',
+    width: '100%'
   },
   section: {
     marginBottom: '24px'
@@ -314,6 +387,25 @@ const styles = {
     borderRadius: '8px',
     padding: '12px'
   },
+  emptyState: {
+    textAlign: 'center',
+    padding: '40px 20px'
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    marginBottom: '16px',
+    fontSize: '14px'
+  },
+  addFirstBtn: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    border: '1px solid #4F46E5',
+    borderRadius: '6px',
+    background: '#EEF2FF',
+    color: '#4F46E5',
+    cursor: 'pointer',
+    fontWeight: '500'
+  },
   activityItem: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -323,13 +415,23 @@ const styles = {
   },
   activityLeft: {
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: '10px',
-    fontSize: '14px',
-    color: '#374151'
+    flex: 1
   },
   activityIcon: {
-    fontSize: '16px'
+    fontSize: '16px',
+    marginTop: '2px'
+  },
+  activityDescription: {
+    fontSize: '14px',
+    color: '#374151',
+    fontWeight: '500'
+  },
+  activityDate: {
+    fontSize: '12px',
+    color: '#9CA3AF',
+    marginTop: '2px'
   },
   activityRight: {
     display: 'flex',
@@ -338,7 +440,7 @@ const styles = {
   },
   activityAmount: {
     fontWeight: '600',
-    color: '#1F2937'
+    fontSize: '14px'
   },
   checkmark: {
     color: '#10B981',
@@ -394,5 +496,9 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 200
+  },
+  loader: {
+    fontSize: '16px',
+    color: '#6B7280'
   }
 };
