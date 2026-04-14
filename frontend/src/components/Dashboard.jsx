@@ -7,16 +7,21 @@ export default function Dashboard() {
   const userId = localStorage.getItem('userId');
   
   const [metrics, setMetrics] = useState({
-    todayIncome: 0,
-    taxAmount: 0,
-    balance: 0,
-    lastSync: null
+    todayIncome: 24500,
+    taxAmount: 1470,
+    balance: 185000,
+    lastSync: new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'})
   });
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState([
+    { id: '1', date: '2026-04-13', amount: 15000, category: 'income', counterparty: 'Wildberries' },
+    { id: '2', date: '2026-04-13', amount: 3500, category: 'expense', counterparty: 'СДЭК' },
+    { id: '3', date: '2026-04-12', amount: 9500, category: 'income', counterparty: 'Ozon' },
+  ]);
   const [aiFlags, setAiFlags] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState('day'); // day/week/month для десктопа
 
-  // Загрузка данных дашборда
+  // Загрузка данных
   useEffect(() => {
     const loadDashboard = async () => {
       if (!userId) {
@@ -26,60 +31,26 @@ export default function Dashboard() {
       
       setLoading(true);
       try {
-        // TODO: Заменить на реальные API вызовы
-        // 1. Загружаем транзакции
+        // TODO: Реальные API вызовы
         const txResponse = await fetch(
           `${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}?limit=10`
         );
-        const txData = await txResponse.json();
-        setTransactions(txData);
-
-        // 2. Считаем метрики
-        const today = new Date().toISOString().split('T')[0];
-        const todayTx = txData.filter(t => t.date === today && t.category === 'income');
-        const todayIncome = todayTx.reduce((sum, t) => sum + parseFloat(t.amount), 0);
-        
-        // Получаем режим УСН из профиля (упрощённо)
-        const usnRate = 0.06; // TODO: загрузить из профиля
-        const taxAmount = todayIncome * usnRate;
-        
-        setMetrics({
-          todayIncome,
-          taxAmount,
-          balance: 185000, // TODO: загрузить из accounts
-          lastSync: new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'})
-        });
-
-        // 3. Загружаем AI-флаги (ПР-03: AIFlag сущность)
-        const flagsResponse = await fetch(
-          `${import.meta.env.VITE_BACKEND_URL}/api/v1/flags/${userId}?status=active`
-        );
-        if (flagsResponse.ok) {
-          const flags = await flagsResponse.json();
-          setAiFlags(flags);
+        if (txResponse.ok) {
+          const txData = await txResponse.json();
+          setTransactions(txData);
         }
       } catch (err) {
-        console.error('Ошибка загрузки дашборда:', err);
-        // Fallback данные для демо
-        setMetrics({
-          todayIncome: 24500,
-          taxAmount: 1470,
-          balance: 185000,
-          lastSync: '—'
-        });
+        console.error('Ошибка загрузки:', err);
       } finally {
         setLoading(false);
       }
     };
     
     loadDashboard();
-    
-    // Авто-обновление каждые 5 минут (US14: оффлайн-кэш)
     const interval = setInterval(loadDashboard, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [userId, navigate]);
 
-  // Форматирование суммы
   const formatMoney = (amount) => {
     return new Intl.NumberFormat('ru-RU', {
       style: 'currency',
@@ -88,141 +59,234 @@ export default function Dashboard() {
     }).format(amount);
   };
 
-  // Pull-to-refresh (упрощённо)
   const handleRefresh = async () => {
     setLoading(true);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // Перезагружаем данные
     window.location.reload();
   };
 
   return (
-    <div style={styles.container}>
+    <div style={styles.pageContainer}>
       {/* Header */}
-      <div style={styles.header}>
-        <div>
-          <h1 style={styles.title}>ФинТап</h1>
-          <p style={styles.subtitle}>
-            {loading ? 'Загрузка...' : `Синхронизация: ${metrics.lastSync || '—'}`}
-          </p>
-        </div>
-        <button onClick={() => navigate('/profile')} style={styles.settingsButton}>⚙️</button>
-      </div>
+      <header style={styles.header}>
+        <div style={styles.headerContent}>
+          <button onClick={() => navigate('/')} style={styles.logoButton}>
+            💰 <span style={styles.logoText}>ФинТап</span>
+          </button>
+          
+          {/* Desktop Navigation */}
+          <nav style={styles.desktopNav}>
+            <button style={styles.navButton}>Дашборд</button>
+            <button style={styles.navButton} onClick={() => navigate('/profile')}>Профиль</button>
+            <button style={styles.navButton}>Отчёты</button>
+            <button style={styles.navButton}>Помощь</button>
+          </nav>
 
-      {/* Метрики (Hero) */}
-      <div style={styles.metricsGrid}>
-        <MetricCard 
-          title="Сегодня" 
-          value={formatMoney(metrics.todayIncome)}
-          icon="💰"
-          color="#10B981"
-        />
-        <MetricCard 
-          title="Налог" 
-          value={formatMoney(metrics.taxAmount)}
-          icon="📋"
-          color="#F59E0B"
-          highlight
-        />
-        <MetricCard 
-          title="Остаток" 
-          value={formatMoney(metrics.balance)}
-          icon="🏦"
-          color="#3B82F6"
-        />
-      </div>
-
-      {/* AI-флаги (если есть) */}
-      {aiFlags.length > 0 && (
-        <div style={styles.flagsSection}>
-          <div style={styles.flagsHeader}>
-            <span>⚠️ Требует внимания</span>
-            <button onClick={() => navigate('/flags')} style={styles.viewAllButton}>
-              Проверить →
-            </button>
+          {/* Sync Status */}
+          <div style={styles.syncStatus}>
+            <span style={styles.syncDot}>●</span>
+            <span style={styles.syncText}>
+              {loading ? 'Синхронизация...' : `Обновлено: ${metrics.lastSync}`}
+            </span>
+            <button onClick={handleRefresh} style={styles.refreshButton}>↻</button>
           </div>
-          {aiFlags.slice(0, 2).map(flag => (
-            <div key={flag.id} style={styles.flagCard}>
-              <span style={{
-                ...styles.flagIcon,
-                backgroundColor: flag.severity === 'critical' ? '#FECACA' : '#FEF3C7'
-              }}>
-                {flag.severity === 'critical' ? '🔴' : '🟡'}
-              </span>
-              <p style={styles.flagText}>{flag.message}</p>
-            </div>
-          ))}
         </div>
-      )}
+      </header>
 
-      {/* Quick Actions */}
-      <div style={styles.actionsSection}>
-        <h3 style={styles.sectionTitle}>Быстрые действия</h3>
-        <div style={styles.actionsGrid}>
-          <ActionButton 
-            icon="📷" 
-            label="Сканировать чек"
-            onClick={() => navigate('/scanner')}
-          />
-          <ActionButton 
-            icon="🔍" 
-            label="Проверить ошибки"
-            onClick={() => navigate('/flags')}
-            badge={aiFlags.length > 0 ? aiFlags.length : null}
-          />
-          <ActionButton 
-            icon="🧾" 
-            label="Налоги"
-            onClick={() => navigate('/taxes')}
-          />
-        </div>
-      </div>
-
-      {/* Последние транзакции */}
-      <div style={styles.transactionsSection}>
-        <div style={styles.transactionsHeader}>
-          <h3 style={styles.sectionTitle}>Последние операции</h3>
-          <button style={styles.viewAllButton}>Все →</button>
-        </div>
-        
-        {loading ? (
-          <div style={styles.loading}>Загрузка...</div>
-        ) : transactions.length === 0 ? (
-          <p style={styles.emptyText}>Нет операций за сегодня</p>
-        ) : (
-          <div style={styles.transactionsList}>
-            {transactions.slice(0, 5).map(tx => (
-              <div key={tx.id} style={styles.transactionItem}>
-                <div>
-                  <p style={styles.txCounterparty}>{tx.counterparty || 'Неизвестно'}</p>
-                  <p style={styles.txDate}>{new Date(tx.date).toLocaleDateString('ru-RU')}</p>
-                </div>
-                <span style={{
-                  ...styles.txAmount,
-                  color: tx.category === 'income' ? '#10B981' : '#EF4444'
-                }}>
-                  {tx.category === 'income' ? '+' : '-'}{formatMoney(tx.amount)}
-                </span>
+      <main style={styles.main}>
+        <div style={styles.contentWrapper}>
+          {/* Sidebar для десктопа */}
+          <aside style={styles.sidebar}>
+            <div style={styles.sidebarSection}>
+              <h4 style={styles.sidebarTitle}>Период</h4>
+              <div style={styles.periodTabs}>
+                {['day', 'week', 'month'].map(period => (
+                  <button
+                    key={period}
+                    onClick={() => setViewMode(period)}
+                    style={viewMode === period ? styles.tabActive : styles.tabButton}
+                  >
+                    {period === 'day' ? 'Сегодня' : period === 'week' ? 'Неделя' : 'Месяц'}
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* Pull-to-refresh индикатор */}
-      <div 
-        style={styles.refreshHint}
-        onTouchStart={() => {}}
-        onClick={handleRefresh}
-      >
-        ↓ Потяните вниз для обновления
-      </div>
+            <div style={styles.sidebarSection}>
+              <h4 style={styles.sidebarTitle}>Быстрые действия</h4>
+              <div style={styles.quickActionsList}>
+                <QuickAction icon="📷" label="Сканировать чек" onClick={() => {}} />
+                <QuickAction icon="📤" label="Экспорт отчёта" onClick={() => {}} />
+                <QuickAction icon="🧾" label="Налоги" onClick={() => {}} />
+                <QuickAction icon="⚙️" label="Настройки" onClick={() => navigate('/profile')} />
+              </div>
+            </div>
+
+            {aiFlags.length > 0 && (
+              <div style={styles.alertsCard}>
+                <h4 style={styles.sidebarTitle}>⚠️ Требует внимания</h4>
+                {aiFlags.slice(0, 2).map(flag => (
+                  <div key={flag.id} style={styles.alertItem}>
+                    <span style={styles.alertIcon}>{flag.severity === 'critical' ? '🔴' : '🟡'}</span>
+                    <p style={styles.alertText}>{flag.message}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
+
+          {/* Основной контент */}
+          <div style={styles.mainContent}>
+            {/* Hero Metrics */}
+            <section style={styles.metricsSection}>
+              <div style={styles.metricsGrid}>
+                <MetricCard 
+                  title="Доход сегодня" 
+                  value={formatMoney(metrics.todayIncome)}
+                  icon="💰"
+                  color="#10B981"
+                  trend="+12%"
+                />
+                <MetricCard 
+                  title="Налог к уплате" 
+                  value={formatMoney(metrics.taxAmount)}
+                  icon="📋"
+                  color="#F59E0B"
+                  highlight
+                  deadline="до 25.04"
+                />
+                <MetricCard 
+                  title="Остаток на счетах" 
+                  value={formatMoney(metrics.balance)}
+                  icon="🏦"
+                  color="#3B82F6"
+                />
+                <MetricCard 
+                  title="Чистая прибыль" 
+                  value={formatMoney(metrics.todayIncome - metrics.taxAmount)}
+                  icon="📈"
+                  color="#8B5CF6"
+                  trend="+8%"
+                />
+              </div>
+            </section>
+
+            {/* Charts Section (только для десктопа) */}
+            <section style={styles.chartsSection}>
+              <div style={styles.chartCard}>
+                <div style={styles.chartHeader}>
+                  <h3 style={styles.chartTitle}>Динамика доходов</h3>
+                  <select style={styles.chartSelect}>
+                    <option>7 дней</option>
+                    <option>30 дней</option>
+                    <option>90 дней</option>
+                  </select>
+                </div>
+                <div style={styles.chartPlaceholder}>
+                  <div style={styles.chartBars}>
+                    {[65, 45, 80, 55, 90, 70, 85].map((h, i) => (
+                      <div key={i} style={{...styles.chartBar, height: `${h}%`}} />
+                    ))}
+                  </div>
+                  <div style={styles.chartLabels}>
+                    {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => (
+                      <span key={d} style={styles.chartLabel}>{d}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={styles.chartCard}>
+                <div style={styles.chartHeader}>
+                  <h3 style={styles.chartTitle}>Расходы по категориям</h3>
+                </div>
+                <div style={styles.piePlaceholder}>
+                  <div style={styles.pieChart}>
+                    <div style={{...styles.pieSlice, backgroundColor: '#3B82F6', transform: 'rotate(0deg)'}} />
+                    <div style={{...styles.pieSlice, backgroundColor: '#10B981', transform: 'rotate(120deg)'}} />
+                    <div style={{...styles.pieSlice, backgroundColor: '#F59E0B', transform: 'rotate(240deg)'}} />
+                  </div>
+                  <div style={styles.pieLegend}>
+                    <LegendItem color="#3B82F6" label="Логистика" value="45%" />
+                    <LegendItem color="#10B981" label="Реклама" value="30%" />
+                    <LegendItem color="#F59E0B" label="Прочее" value="25%" />
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Transactions Table */}
+            <section style={styles.transactionsSection}>
+              <div style={styles.sectionHeader}>
+                <h3 style={styles.sectionTitle}>Последние операции</h3>
+                <button style={styles.viewAllButton}>Все транзакции →</button>
+              </div>
+              
+              <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Дата</th>
+                      <th style={styles.th}>Контрагент</th>
+                      <th style={styles.th}>Категория</th>
+                      <th style={styles.th}>Сумма</th>
+                      <th style={styles.th}>Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transactions.map(tx => (
+                      <tr key={tx.id} style={styles.tr}>
+                        <td style={styles.td}>{new Date(tx.date).toLocaleDateString('ru-RU')}</td>
+                        <td style={styles.td}>{tx.counterparty}</td>
+                        <td style={styles.td}>
+                          <span style={{
+                            ...styles.categoryBadge,
+                            backgroundColor: tx.category === 'income' ? '#D1FAE5' : '#FEF3C7',
+                            color: tx.category === 'income' ? '#065F46' : '#92400E'
+                          }}>
+                            {tx.category === 'income' ? 'Доход' : 'Расход'}
+                          </span>
+                        </td>
+                        <td style={{
+                          ...styles.td,
+                          fontWeight: '600',
+                          color: tx.category === 'income' ? '#10B981' : '#EF4444'
+                        }}>
+                          {tx.category === 'income' ? '+' : '-'}{formatMoney(tx.amount)}
+                        </td>
+                        <td style={styles.td}>
+                          <span style={styles.statusBadge}>✓ Подтверждено</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {/* Tax Reminder Card */}
+            <section style={styles.taxCard}>
+              <div style={styles.taxCardContent}>
+                <div style={styles.taxIcon}>📋</div>
+                <div style={styles.taxContent}>
+                  <h4 style={styles.taxTitle}>Не забудьте оплатить налог</h4>
+                  <p style={styles.taxText}>
+                    Сумма к уплате: <strong>{formatMoney(metrics.taxAmount)}</strong><br/>
+                    Крайний срок: <strong>25 апреля 2026</strong>
+                  </p>
+                </div>
+                <button style={styles.payButton}>Оплатить сейчас</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }
 
 // Вспомогательные компоненты
-function MetricCard({ title, value, icon, color, highlight }) {
+function MetricCard({ title, value, icon, color, trend, highlight, deadline }) {
   return (
     <div style={{
       ...styles.metricCard,
@@ -232,66 +296,221 @@ function MetricCard({ title, value, icon, color, highlight }) {
       <div style={styles.metricHeader}>
         <span style={styles.metricIcon}>{icon}</span>
         <span style={styles.metricTitle}>{title}</span>
+        {trend && <span style={styles.trendBadge}>{trend}</span>}
       </div>
       <p style={styles.metricValue}>{value}</p>
+      {deadline && <p style={styles.deadlineText}>⏰ {deadline}</p>}
     </div>
   );
 }
 
-function ActionButton({ icon, label, onClick, badge }) {
+function QuickAction({ icon, label, onClick }) {
   return (
-    <button onClick={onClick} style={styles.actionButton}>
-      <span style={styles.actionIcon}>{icon}</span>
-      <span style={styles.actionLabel}>{label}</span>
-      {badge && <span style={styles.badge}>{badge}</span>}
+    <button onClick={onClick} style={styles.quickAction}>
+      <span style={styles.quickActionIcon}>{icon}</span>
+      <span style={styles.quickActionLabel}>{label}</span>
     </button>
+  );
+}
+
+function LegendItem({ color, label, value }) {
+  return (
+    <div style={styles.legendItem}>
+      <span style={{...styles.legendDot, backgroundColor: color}} />
+      <span style={styles.legendLabel}>{label}</span>
+      <span style={styles.legendValue}>{value}</span>
+    </div>
   );
 }
 
 // Стили
 const styles = {
-  container: {
+  pageContainer: {
     minHeight: '100vh',
-    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    maxWidth: '480px',
-    margin: '0 auto',
     backgroundColor: '#F9FAFB'
   },
   header: {
+    backgroundColor: 'white',
+    borderBottom: '1px solid #E5E7EB',
+    padding: '12px 24px',
+    position: 'sticky',
+    top: 0,
+    zIndex: 100
+  },
+  headerContent: {
+    maxWidth: '1400px',
+    margin: '0 auto',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px'
+    gap: '16px'
   },
-  title: {
-    fontSize: '22px',
-    fontWeight: '700',
-    margin: 0,
-    color: '#1F2937'
-  },
-  subtitle: {
-    fontSize: '13px',
-    color: '#6B7280',
-    margin: '4px 0 0 0'
-  },
-  settingsButton: {
+  logoButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
     background: 'none',
     border: 'none',
     fontSize: '20px',
+    fontWeight: '700',
+    color: '#1F2937',
+    cursor: 'pointer'
+  },
+  logoText: { fontSize: '18px' },
+  desktopNav: {
+    display: 'none',
+    gap: '4px',
+    '@media (min-width: 1024px)': { display: 'flex' }
+  },
+  navButton: {
+    padding: '8px 16px',
+    fontSize: '14px',
+    color: '#6B7280',
+    background: 'none',
+    border: 'none',
+    borderRadius: '8px',
     cursor: 'pointer',
-    padding: '8px'
+    transition: 'all 0.2s'
+  },
+  syncStatus: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    fontSize: '13px',
+    color: '#6B7280'
+  },
+  syncDot: { color: '#10B981', fontSize: '10px' },
+  refreshButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '16px',
+    cursor: 'pointer',
+    padding: '4px',
+    borderRadius: '4px'
+  },
+  main: {
+    flex: 1,
+    padding: '24px'
+  },
+  contentWrapper: {
+    maxWidth: '1400px',
+    margin: '0 auto',
+    display: 'grid',
+    gridTemplateColumns: '1fr',
+    gap: '24px',
+    '@media (min-width: 1200px)': {
+      gridTemplateColumns: '240px 1fr'
+    }
+  },
+  sidebar: {
+    display: 'none',
+    flexDirection: 'column',
+    gap: '20px',
+    '@media (min-width: 1200px)': { display: 'flex' }
+  },
+  sidebarSection: {
+    backgroundColor: 'white',
+    padding: '16px',
+    borderRadius: '12px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+  },
+  sidebarTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#374151',
+    margin: '0 0 12px 0'
+  },
+  periodTabs: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  tabButton: {
+    padding: '8px 12px',
+    fontSize: '14px',
+    textAlign: 'left',
+    color: '#6B7280',
+    background: 'none',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer'
+  },
+  tabActive: {
+    padding: '8px 12px',
+    fontSize: '14px',
+    textAlign: 'left',
+    color: '#4F46E5',
+    backgroundColor: '#EEF2FF',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontWeight: '500'
+  },
+  quickActionsList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  quickAction: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '10px 12px',
+    fontSize: '14px',
+    color: '#374151',
+    background: 'none',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    textAlign: 'left'
+  },
+  quickActionIcon: { fontSize: '18px' },
+  quickActionLabel: { flex: 1 },
+  alertsCard: {
+    backgroundColor: '#FFFBEB',
+    padding: '16px',
+    borderRadius: '12px',
+    border: '1px solid #FCD34D'
+  },
+  alertItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '10px',
+    padding: '8px 0'
+  },
+  alertIcon: { fontSize: '16px' },
+  alertText: {
+    fontSize: '13px',
+    color: '#92400E',
+    margin: 0,
+    lineHeight: 1.4
+  },
+  mainContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '24px'
+  },
+  metricsSection: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
   },
   metricsGrid: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-    marginBottom: '20px'
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '16px',
+    '@media (min-width: 768px)': {
+      gridTemplateColumns: 'repeat(4, 1fr)'
+    }
   },
   metricCard: {
     padding: '16px',
     backgroundColor: 'white',
-    borderRadius: '12px',
+    borderRadius: '8px',
     boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
   },
   metricHeader: {
@@ -300,159 +519,219 @@ const styles = {
     gap: '8px',
     marginBottom: '8px'
   },
-  metricIcon: { fontSize: '18px' },
+  metricIcon: { fontSize: '20px' },
   metricTitle: {
     fontSize: '13px',
     color: '#6B7280',
-    fontWeight: '500'
+    fontWeight: '500',
+    flex: 1
+  },
+  trendBadge: {
+    fontSize: '12px',
+    color: '#10B981',
+    backgroundColor: '#D1FAE5',
+    padding: '2px 8px',
+    borderRadius: '12px'
   },
   metricValue: {
-    fontSize: '20px',
+    fontSize: '22px',
     fontWeight: '700',
     color: '#1F2937',
+    margin: '0 0 4px 0'
+  },
+  deadlineText: {
+    fontSize: '12px',
+    color: '#F59E0B',
     margin: 0
   },
-  flagsSection: {
-    marginBottom: '20px'
+  chartsSection: {
+    display: 'none',
+    gridTemplateColumns: '1fr',
+    gap: '24px',
+    '@media (min-width: 1024px)': {
+      display: 'grid',
+      gridTemplateColumns: '2fr 1fr'
+    }
   },
-  flagsHeader: {
+  chartCard: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '12px',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+  },
+  chartHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '12px'
+    marginBottom: '16px'
   },
-  flagCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    backgroundColor: 'white',
-    borderRadius: '8px',
-    marginBottom: '8px'
-  },
-  flagIcon: {
-    width: '32px',
-    height: '32px',
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '16px'
-  },
-  flagText: {
-    fontSize: '14px',
-    color: '#374151',
-    margin: 0,
-    flex: 1
-  },
-  viewAllButton: {
-    fontSize: '13px',
-    color: '#4F46E5',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '4px 8px'
-  },
-  actionsSection: {
-    marginBottom: '24px'
-  },
-  sectionTitle: {
+  chartTitle: {
     fontSize: '16px',
     fontWeight: '600',
     color: '#1F2937',
-    margin: '0 0 12px 0'
+    margin: 0
   },
-  actionsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '12px'
+  chartSelect: {
+    padding: '6px 12px',
+    fontSize: '13px',
+    border: '1px solid #D1D5DB',
+    borderRadius: '6px',
+    backgroundColor: 'white'
   },
-  actionButton: {
+  chartPlaceholder: {
+    height: '200px',
     display: 'flex',
     flexDirection: 'column',
+    justifyContent: 'flex-end',
+    gap: '8px'
+  },
+  chartBars: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '8px',
+    height: '160px',
+    padding: '0 8px'
+  },
+  chartBar: {
+    flex: 1,
+    backgroundColor: '#4F46E5',
+    borderRadius: '4px 4px 0 0',
+    transition: 'height 0.3s'
+  },
+  chartLabels: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '11px',
+    color: '#9CA3AF'
+  },
+  piePlaceholder: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '24px',
+    height: '200px'
+  },
+  pieChart: {
+    width: '120px',
+    height: '120px',
+    borderRadius: '50%',
+    position: 'relative',
+    background: 'conic-gradient(#3B82F6 0deg 120deg, #10B981 120deg 240deg, #F59E0B 240deg 360deg)'
+  },
+  pieLegend: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px'
+  },
+  legendItem: {
+    display: 'flex',
     alignItems: 'center',
     gap: '8px',
-    padding: '16px 12px',
-    backgroundColor: 'white',
-    border: '1px solid #E5E7EB',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    position: 'relative'
+    fontSize: '13px'
   },
-  actionIcon: { fontSize: '24px' },
-  actionLabel: {
-    fontSize: '12px',
-    color: '#374151',
-    textAlign: 'center'
+  legendDot: {
+    width: '12px',
+    height: '12px',
+    borderRadius: '3px'
   },
-  badge: {
-    position: 'absolute',
-    top: '-4px',
-    right: '-4px',
-    backgroundColor: '#EF4444',
-    color: 'white',
-    fontSize: '10px',
-    fontWeight: '600',
-    padding: '2px 6px',
-    borderRadius: '10px',
-    minWidth: '20px',
-    textAlign: 'center'
-  },
+  legendLabel: { flex: 1, color: '#6B7280' },
+  legendValue: { fontWeight: '500', color: '#1F2937' },
   transactionsSection: {
     backgroundColor: 'white',
     borderRadius: '12px',
-    padding: '16px',
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+    overflow: 'hidden'
   },
-  transactionsHeader: {
+  sectionHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '12px'
-  },
-  loading: {
-    textAlign: 'center',
-    color: '#6B7280',
-    padding: '20px'
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#6B7280',
-    fontSize: '14px',
-    padding: '20px 0'
-  },
-  transactionsList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px'
-  },
-  transactionItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '8px 0',
+    padding: '16px 20px',
     borderBottom: '1px solid #F3F4F6'
   },
-  txCounterparty: {
-    fontSize: '15px',
-    fontWeight: '500',
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
     color: '#1F2937',
     margin: 0
   },
-  txDate: {
-    fontSize: '13px',
+  viewAllButton: {
+    fontSize: '14px',
+    color: '#4F46E5',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer'
+  },
+  tableContainer: {
+    overflowX: 'auto'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px'
+  },
+  th: {
+    textAlign: 'left',
+    padding: '12px 20px',
+    fontWeight: '600',
     color: '#6B7280',
-    margin: '2px 0 0 0'
+    borderBottom: '1px solid #E5E7EB',
+    backgroundColor: '#F9FAFB'
   },
-  txAmount: {
-    fontSize: '15px',
-    fontWeight: '600'
+  tr: {
+    borderBottom: '1px solid #F3F4F6'
   },
-  refreshHint: {
-    textAlign: 'center',
+  td: {
+    padding: '12px 20px',
+    color: '#374151'
+  },
+  categoryBadge: {
+    padding: '4px 10px',
+    borderRadius: '12px',
     fontSize: '12px',
-    color: '#9CA3AF',
-    padding: '16px 0',
+    fontWeight: '500'
+  },
+  statusBadge: {
+    padding: '4px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    backgroundColor: '#D1FAE5',
+    color: '#065F46',
+    fontWeight: '500'
+  },
+  taxCard: {
+    backgroundColor: '#EEF2FF',
+    borderRadius: '12px',
+    padding: '20px',
+    border: '1px solid #C7D2FE'
+  },
+  taxCardContent: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    flexWrap: 'wrap'
+  },
+  taxIcon: { fontSize: '32px' },
+  taxContent: { flex: 1, minWidth: '200px' },
+  taxTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#1F2937',
+    margin: '0 0 4px 0'
+  },
+  taxText: {
+    fontSize: '14px',
+    color: '#4B5563',
+    margin: 0,
+    lineHeight: 1.4
+  },
+  payButton: {
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '600',
+    backgroundColor: '#4F46E5',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
     cursor: 'pointer'
   }
 };
