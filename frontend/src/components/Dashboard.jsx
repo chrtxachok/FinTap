@@ -1,5 +1,5 @@
 // src/components/Dashboard.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AddTransaction from './AddTransaction';
 
@@ -7,7 +7,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const userId = localStorage.getItem('userId');
   const userName = localStorage.getItem('userName') || 'Пользователь';
+  const usnMode = localStorage.getItem('usnMode') || 'доходы';
   
+  // Инициализируем состояние с нулевыми значениями
   const [metrics, setMetrics] = useState({
     today_income: 0,
     today_expense: 0,
@@ -18,146 +20,103 @@ export default function Dashboard() {
     balance: 0,
     transaction_count: 0
   });
+  
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  const [error, setError] = useState(null);
 
-  // 1. Добавьте функцию для пересчета метрик локально
-  // 1. Добавьте функцию для пересчета метрик локально
-const recalculateMetrics = (newTransaction) => {
-  setMetrics(prev => {
+  // Функция расчета метрик из транзакций (стабильная ссылка)
+  const calculateMetricsFromTransactions = useCallback((txList) => {
     const today = new Date().toISOString().split('T')[0];
-    const isToday = newTransaction.date === today;
+    const todayTxs = txList.filter(tx => tx.date === today);
     
-    if (!isToday) return prev;
+    const income = todayTxs
+      .filter(tx => tx.category === 'income')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     
-    const amount = Number(newTransaction.amount);
-    const category = newTransaction.category;
+    const expense = todayTxs
+      .filter(tx => tx.category === 'expense')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     
-    let newIncome = prev.today_income;
-    let newExpense = prev.today_expense;
+    const net = income - expense;
+    const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
+    const tax = net > 0 ? net * usnRate : 0;
     
-    if (category === 'income') {
-      newIncome += amount;
-    } else {
-      newExpense += amount;
+    // Обновляем метрики, сохраняя предыдущие значения если новые нулевые
+    setMetrics(prev => ({
+      today_income: income || prev.today_income,
+      today_expense: expense || prev.today_expense,
+      net_today: net || prev.net_today,
+      tax_estimate: tax || prev.tax_estimate,
+      wb_sales: income || prev.wb_sales,
+      commission: Math.round((income || prev.wb_sales) * 0.18),
+      balance: net || prev.balance,
+      transaction_count: txList.length || prev.transaction_count
+    }));
+  }, [usnMode]);
+
+  // Функция загрузки данных (стабильная ссылка)
+  const loadData = useCallback(async () => {
+    if (!userId) { 
+      navigate('/'); 
+      return; 
     }
     
-    const newNet = newIncome - newExpense;
-    const usnRate = localStorage.getItem('usnMode') === 'доходы_расходы' ? 0.15 : 0.06;
-    const newTax = newNet > 0 ? newNet * usnRate : 0;
+    // Не показываем лоадер при авто-обновлении, только при первой загрузке
+    if (metrics.today_income === 0 && transactions.length === 0) {
+      setLoading(true);
+    }
     
-    return {
-      ...prev,
-      today_income: newIncome,
-      today_expense: newExpense,
-      net_today: newNet,
-      tax_estimate: newTax,
-      transaction_count: prev.transaction_count + 1
-    };
-  });
-};
-
-// 2. Обновите loadData для корректной загрузки
-const loadData = async () => {
-  if (!userId) { 
-    navigate('/'); 
-    return; 
-  }
-  
-  setLoading(true);
-  
-  try {
-    // Загружаем метрики дашборда
-    const mRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/dashboard/${userId}`);
-    if (mRes.ok) {
-      const metricsData = await mRes.json();
-      setMetrics({
-        today_income: metricsData.today_income || 0,
-        today_expense: metricsData.today_expense || 0,
-        net_today: metricsData.net_today || 0,
-        tax_estimate: metricsData.tax_estimate || 0,
-        wb_sales: metricsData.wb_sales || metricsData.today_income || 0,
-        commission: metricsData.commission || Math.round((metricsData.today_income || 0) * 0.18),
-        balance: metricsData.balance || 0,
-        transaction_count: metricsData.transaction_count || 0
-      });
-    } else {
-      // Если endpoint не работает, считаем из транзакций
+    setError(null);
+    
+    try {
+      // Загружаем транзакции
       const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
       if (tRes.ok) {
         const txData = await tRes.json();
-        calculateMetricsFromTransactions(txData || []);
+        setTransactions(txData || []);
+        
+        // Считаем метрики из транзакций
+        if (txData && txData.length > 0) {
+          calculateMetricsFromTransactions(txData);
+        }
+      } else {
+        console.warn('Failed to load transactions:', tRes.status);
       }
+    } catch (err) {
+      console.error('Load error:', err);
+      setError('Не удалось загрузить данные. Проверьте подключение.');
+      // НЕ сбрасываем метрики при ошибке — сохраняем кэш!
+    } finally {
+      setLoading(false);
     }
-    
-    // Загружаем транзакции
-    const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
-    if (tRes.ok) {
-      const txData = await tRes.json();
-      setTransactions(txData || []);
-      
-      // Если метрики не загрузились, считаем из транзакций
-      if (metrics.today_income === 0 && txData.length > 0) {
-        calculateMetricsFromTransactions(txData);
-      }
-    }
-  } catch (err) {
-    console.error('Load error:', err);
-  } finally {
-    setLoading(false);
-  }
-};
+  }, [userId, navigate, calculateMetricsFromTransactions, metrics.today_income, transactions.length]);
 
-// 3. Добавьте функцию расчета метрик из транзакций
-const calculateMetricsFromTransactions = (transactions) => {
-  const today = new Date().toISOString().split('T')[0];
-  const todayTxs = transactions.filter(tx => tx.date === today);
-  
-  const income = todayTxs
-    .filter(tx => tx.category === 'income')
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  
-  const expense = todayTxs
-    .filter(tx => tx.category === 'expense')
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  
-  const net = income - expense;
-  const usnMode = localStorage.getItem('usnMode') || 'доходы';
-  const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
-  const tax = net > 0 ? net * usnRate : 0;
-  
-  setMetrics({
-    today_income: income,
-    today_expense: expense,
-    net_today: net,
-    tax_estimate: tax,
-    wb_sales: income,
-    commission: Math.round(income * 0.18),
-    balance: net,
-    transaction_count: transactions.length
-  });
-};
-
-// 4. Обновите AddTransaction для мгновенного обновления
-const handleAddTransactionSuccess = (newTransaction) => {
-  // Добавляем транзакцию в список
-  setTransactions(prev => [newTransaction, ...prev]);
-  
-  // Мгновенно пересчитываем метрики
-  recalculateMetrics(newTransaction);
-  
-  // Закрываем модалку
-  setShowAdd(false);
-};
-
-  // Загрузка при монтировании и авто-обновление каждые 30 секунд
+  // Загрузка при монтировании и авто-обновление
   useEffect(() => { 
     loadData(); 
-    const interval = setInterval(loadData, 30000); // Авто-обновление каждые 30 сек
-    return () => clearInterval(interval);
-  }, [userId, navigate]);
+    
+    // Авто-обновление каждые 60 секунд (не слишком часто!)
+    const interval = setInterval(loadData, 60000);
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, [loadData]);
+
+  // Мгновенное обновление метрик при добавлении транзакции
+  const handleAddTransaction = (newTransaction) => {
+    // Добавляем новую транзакцию в начало списка
+    setTransactions(prev => {
+      const newTransactions = [newTransaction, ...prev];
+      // Пересчитываем метрики с новыми данными
+      calculateMetricsFromTransactions(newTransactions);
+      return newTransactions;
+    });
+    
+    setShowAdd(false);
+  };
 
   const formatMoney = (n) => new Intl.NumberFormat('ru-RU', { 
     style: 'currency', 
@@ -171,7 +130,8 @@ const handleAddTransactionSuccess = (newTransaction) => {
     }
   };
 
-  if (loading && metrics.today_income === 0) {
+  // Показываем лоадер только при первой загрузке
+  if (loading && metrics.today_income === 0 && transactions.length === 0) {
     return (
       <div style={styles.page}>
         <div style={{...styles.container, textAlign: 'center', paddingTop: 40}}>
@@ -195,6 +155,14 @@ const handleAddTransactionSuccess = (newTransaction) => {
       </header>
 
       <main style={styles.main}>
+        {/* Показываем ошибку если есть */}
+        {error && (
+          <div style={styles.errorBanner}>
+            ⚠️ {error}
+            <button onClick={() => setError(null)} style={styles.closeError}>×</button>
+          </div>
+        )}
+
         {/* МЕТРИКИ ЗА СЕГОДНЯ */}
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>[ МЕТРИКИ ЗА СЕГОДНЯ ]</h2>
@@ -327,7 +295,11 @@ const handleAddTransactionSuccess = (newTransaction) => {
       {showAdd && (
         <div style={styles.modal} onClick={() => setShowAdd(false)}>
           <div className="card" style={{maxWidth: 400, width: '90%'}} onClick={e => e.stopPropagation()}>
-            <AddTransaction userId={userId} onSuccess={() => { setShowAdd(false); loadData(); }} onClose={() => setShowAdd(false)} />
+            <AddTransaction 
+              userId={userId} 
+              onSuccess={handleAddTransaction}
+              onClose={() => setShowAdd(false)} 
+            />
           </div>
         </div>
       )}
@@ -336,6 +308,7 @@ const handleAddTransactionSuccess = (newTransaction) => {
 }
 
 const styles = {
+  // ... (все стили остаются такими же как были)
   page: {
     minHeight: '100vh',
     backgroundColor: '#F9FAFB',
@@ -591,5 +564,23 @@ const styles = {
   loader: {
     fontSize: '16px',
     color: '#6B7280'
+  },
+  errorBanner: {
+    backgroundColor: '#FEF2F2',
+    border: '1px solid #FCA5A5',
+    color: '#DC2626',
+    padding: '12px 16px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  closeError: {
+    background: 'none',
+    border: 'none',
+    fontSize: '20px',
+    cursor: 'pointer',
+    color: '#DC2626'
   }
 };
