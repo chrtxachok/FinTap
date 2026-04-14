@@ -8,35 +8,40 @@ export default function Onboarding() {
   const [form, setForm] = useState({ phone: '', inn: '', usn_mode: 'доходы', name: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  
 
-  const handleSubmit = async () => {
-    if (!form.phone.match(/^\d{10,11}$/) || !form.inn.match(/^\d{12}$/)) {
-      setError('Проверьте телефон (10-11 цифр) и ИНН (12 цифр)');
-      return;
-    }
+  // В функции handleSubmit после успешной регистрации:
+const handleSubmit = async () => {
+  if (!form.phone.match(/^\d{10,11}$/) || !form.inn.match(/^\d{12}$/)) {
+    setError('Проверьте телефон (10-11 цифр) и ИНН (12 цифр)');
+    return;
+  }
+  
+  setLoading(true);
+  setError('');
+  
+  try {
+    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(form)
+    });
     
-    setLoading(true);
-    setError('');
+    if (!res.ok) throw new Error('Ошибка регистрации');
+    const user = await res.json();
     
-    try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      
-      if (!res.ok) throw new Error('Ошибка регистрации');
-      const user = await res.json();
-      
-      localStorage.setItem('userId', user.id);
-      localStorage.setItem('usnMode', user.usn_mode);
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // ✅ СОХРАНЯЕМ ДАННЫЕ В LOCALSTORAGE
+    localStorage.setItem('userId', user.id);
+    localStorage.setItem('usnMode', user.usn_mode);
+    localStorage.setItem('userName', user.name || form.name || 'Пользователь'); // ← ДОБАВЛЕНО
+    
+    navigate('/dashboard');
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="container">

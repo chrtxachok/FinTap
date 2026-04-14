@@ -23,43 +23,134 @@ export default function Dashboard() {
   const [showAdd, setShowAdd] = useState(false);
   const today = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 
-  const loadData = async () => {
-    if (!userId) { 
-      navigate('/'); 
-      return; 
+  // 1. Добавьте функцию для пересчета метрик локально
+  // 1. Добавьте функцию для пересчета метрик локально
+const recalculateMetrics = (newTransaction) => {
+  setMetrics(prev => {
+    const today = new Date().toISOString().split('T')[0];
+    const isToday = newTransaction.date === today;
+    
+    if (!isToday) return prev;
+    
+    const amount = Number(newTransaction.amount);
+    const category = newTransaction.category;
+    
+    let newIncome = prev.today_income;
+    let newExpense = prev.today_expense;
+    
+    if (category === 'income') {
+      newIncome += amount;
+    } else {
+      newExpense += amount;
     }
     
-    setLoading(true);
+    const newNet = newIncome - newExpense;
+    const usnRate = localStorage.getItem('usnMode') === 'доходы_расходы' ? 0.15 : 0.06;
+    const newTax = newNet > 0 ? newNet * usnRate : 0;
     
-    try {
-      // Загружаем метрики дашборда
-      const mRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/dashboard/${userId}`);
-      if (mRes.ok) {
-        const metricsData = await mRes.json();
-        setMetrics({
-          today_income: metricsData.today_income || 0,
-          today_expense: metricsData.today_expense || 0,
-          net_today: metricsData.net_today || 0,
-          tax_estimate: metricsData.tax_estimate || 0,
-          wb_sales: metricsData.wb_sales || metricsData.today_income || 0,
-          commission: metricsData.commission || Math.round((metricsData.today_income || 0) * 0.18),
-          balance: metricsData.balance || 0,
-          transaction_count: metricsData.transaction_count || 0
-        });
-      }
-      
-      // Загружаем транзакции
+    return {
+      ...prev,
+      today_income: newIncome,
+      today_expense: newExpense,
+      net_today: newNet,
+      tax_estimate: newTax,
+      transaction_count: prev.transaction_count + 1
+    };
+  });
+};
+
+// 2. Обновите loadData для корректной загрузки
+const loadData = async () => {
+  if (!userId) { 
+    navigate('/'); 
+    return; 
+  }
+  
+  setLoading(true);
+  
+  try {
+    // Загружаем метрики дашборда
+    const mRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/dashboard/${userId}`);
+    if (mRes.ok) {
+      const metricsData = await mRes.json();
+      setMetrics({
+        today_income: metricsData.today_income || 0,
+        today_expense: metricsData.today_expense || 0,
+        net_today: metricsData.net_today || 0,
+        tax_estimate: metricsData.tax_estimate || 0,
+        wb_sales: metricsData.wb_sales || metricsData.today_income || 0,
+        commission: metricsData.commission || Math.round((metricsData.today_income || 0) * 0.18),
+        balance: metricsData.balance || 0,
+        transaction_count: metricsData.transaction_count || 0
+      });
+    } else {
+      // Если endpoint не работает, считаем из транзакций
       const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
       if (tRes.ok) {
         const txData = await tRes.json();
-        setTransactions(txData || []);
+        calculateMetricsFromTransactions(txData || []);
       }
-    } catch (err) {
-      console.error('Load error:', err);
-    } finally {
-      setLoading(false);
     }
-  };
+    
+    // Загружаем транзакции
+    const tRes = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions/${userId}`);
+    if (tRes.ok) {
+      const txData = await tRes.json();
+      setTransactions(txData || []);
+      
+      // Если метрики не загрузились, считаем из транзакций
+      if (metrics.today_income === 0 && txData.length > 0) {
+        calculateMetricsFromTransactions(txData);
+      }
+    }
+  } catch (err) {
+    console.error('Load error:', err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+// 3. Добавьте функцию расчета метрик из транзакций
+const calculateMetricsFromTransactions = (transactions) => {
+  const today = new Date().toISOString().split('T')[0];
+  const todayTxs = transactions.filter(tx => tx.date === today);
+  
+  const income = todayTxs
+    .filter(tx => tx.category === 'income')
+    .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  
+  const expense = todayTxs
+    .filter(tx => tx.category === 'expense')
+    .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  
+  const net = income - expense;
+  const usnMode = localStorage.getItem('usnMode') || 'доходы';
+  const usnRate = usnMode === 'доходы_расходы' ? 0.15 : 0.06;
+  const tax = net > 0 ? net * usnRate : 0;
+  
+  setMetrics({
+    today_income: income,
+    today_expense: expense,
+    net_today: net,
+    tax_estimate: tax,
+    wb_sales: income,
+    commission: Math.round(income * 0.18),
+    balance: net,
+    transaction_count: transactions.length
+  });
+};
+
+// 4. Обновите AddTransaction для мгновенного обновления
+const handleAddTransactionSuccess = (newTransaction) => {
+  // Добавляем транзакцию в список
+  setTransactions(prev => [newTransaction, ...prev]);
+  
+  // Мгновенно пересчитываем метрики
+  recalculateMetrics(newTransaction);
+  
+  // Закрываем модалку
+  setShowAdd(false);
+};
 
   // Загрузка при монтировании и авто-обновление каждые 30 секунд
   useEffect(() => { 

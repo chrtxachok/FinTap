@@ -6,26 +6,28 @@ export default function AddTransaction({ userId, onSuccess, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.amount || form.amount <= 0) { setError('Введите корректную сумму'); return; }
+    const handleSubmit = async (e) => {
+  e.preventDefault();
+  if (!form.amount || form.amount <= 0) { setError('Введите корректную сумму'); return; }
+  
+  setLoading(true);
+  try {
+    const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, ...form, amount: Number(form.amount) })
+    });
     
-    setLoading(true);
-    try {
-      const res = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/v1/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, ...form, amount: Number(form.amount) })
-      });
-      
-      if (!res.ok) throw new Error('Ошибка сохранения');
-      onSuccess?.();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (!res.ok) throw new Error('Ошибка сохранения');
+    
+    const newTransaction = await res.json();
+    onSuccess?.(newTransaction); // ← ВОЗВРАЩАЕМ НОВУЮ ТРАНЗАКЦИЮ
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <form onSubmit={handleSubmit} className="flex-col">
