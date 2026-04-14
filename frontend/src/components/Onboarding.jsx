@@ -10,6 +10,12 @@ export default function Onboarding() {
   const [error, setError] = useState('');
   const [existingUser, setExistingUser] = useState(null);
 
+  const normalizePhone = (raw) => {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (digits.length === 10) return `7${digits}`;
+    return digits;
+  };
+
   // Проверка существующего пользователя при вводе телефона
   const checkExistingUser = async (phone) => {
     if (phone.length < 10) return;
@@ -33,7 +39,7 @@ export default function Onboarding() {
   };
 
   const handlePhoneChange = (value) => {
-    const cleanPhone = value.replace(/\D/g, '');
+    const cleanPhone = normalizePhone(value);
     setForm({...form, phone: cleanPhone});
     checkExistingUser(cleanPhone);
   };
@@ -60,8 +66,8 @@ export default function Onboarding() {
   };
 
   const handleSubmit = async () => {
-    if (!form.phone.match(/^\d{10,11}$/) || !form.inn.match(/^\d{12}$/)) {
-      setError('Проверьте телефон (10-11 цифр) и ИНН (12 цифр)');
+    if (!form.phone.match(/^7\d{10}$/) || !form.inn.match(/^\d{12}$/)) {
+      setError('Проверьте телефон (10 цифр без +7 или 11 цифр начиная с 7) и ИНН (12 цифр)');
       return;
     }
     

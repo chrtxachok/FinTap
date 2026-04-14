@@ -163,7 +163,7 @@ export default function Dashboard() {
               <p style={styles.metricValue}>{formatMoney(metrics.net_today)}</p>
               <div style={styles.breakdown}>
                 <div style={styles.breakdownRow}>
-                  <span>Доход:</span>
+                  <span>WB:</span>
                   <span>{formatMoney(metrics.wb_sales)}</span>
                 </div>
                 <div style={{...styles.breakdownRow, color: '#EF4444'}}>

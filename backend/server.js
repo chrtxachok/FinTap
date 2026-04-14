@@ -41,13 +41,14 @@ app.post('/api/v1/users/check', async (req, res) => {
       return res.status(400).json({ error: 'Некорректный телефон' });
     }
     
-    const {  user, error } = await supabase
+    const { data: user, error } = await supabase
       .from('users')
       .select('id, phone, inn, usn_mode, name')
       .eq('phone', phone)
-      .single();
+      .maybeSingle();
     
-    if (error || !user) {
+    if (error) throw error;
+    if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
     
@@ -68,11 +69,13 @@ app.post('/api/v1/users', async (req, res) => {
     if (!inn || inn.length !== 12) return res.status(400).json({ error: 'ИНН должен содержать 12 цифр' });
     
     // Проверка на дубликат
-    const {  existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('users')
       .select('id')
       .eq('phone', phone)
-      .single();
+      .maybeSingle();
+
+    if (existingError) throw existingError;
     
     if (existing) {
       return res.status(400).json({ 
@@ -81,7 +84,7 @@ app.post('/api/v1/users', async (req, res) => {
     }
     
     // Создание
-    const {  data, error } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .insert([{ 
         phone, 
@@ -90,10 +93,11 @@ app.post('/api/v1/users', async (req, res) => {
         name: name || 'Пользователь', 
         is_active: true 
       }])
-      .select();
+      .select()
+      .single();
     
     if (error) throw error;
-    res.status(201).json(data[0]);
+    res.status(201).json(data);
   } catch (err) {
     console.error('Registration error:', err);
     res.status(400).json({ error: err.message });
@@ -103,7 +107,7 @@ app.post('/api/v1/users', async (req, res) => {
 // Получение профиля
 app.get('/api/v1/users/:id', async (req, res) => {
   try {
-    const {  data, error } = await supabase.from('users').select('*').eq('id', req.params.id).single();
+    const { data, error } = await supabase.from('users').select('*').eq('id', req.params.id).single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -119,7 +123,7 @@ app.post('/api/v1/transactions', async (req, res) => {
     
     if (!user_id || !amount) return res.status(400).json({ error: 'user_id и amount обязательны' });
     
-    const {  data, error } = await supabase
+    const { data, error } = await supabase
       .from('transactions')
       .insert([{ 
         user_id, 
@@ -129,10 +133,11 @@ app.post('/api/v1/transactions', async (req, res) => {
         counterparty: counterparty || 'Не указано',
         status: 'confirmed'
       }])
-      .select();
+      .select()
+      .single();
     
     if (error) throw error;
-    res.status(201).json(data[0]);
+    res.status(201).json(data);
   } catch (err) {
     console.error('Transaction error:', err);
     res.status(400).json({ error: err.message });
@@ -142,7 +147,7 @@ app.post('/api/v1/transactions', async (req, res) => {
 // Получить транзакции пользователя
 app.get('/api/v1/transactions/:user_id', async (req, res) => {
   try {
-    const {  data, error } = await supabase
+    const { data, error } = await supabase
       .from('transactions')
       .select('*')
       .eq('user_id', req.params.user_id)
@@ -163,7 +168,7 @@ app.get('/api/v1/dashboard/:user_id', async (req, res) => {
     const { user_id } = req.params;
     
     // Получаем транзакции
-    const {  txs, error } = await supabase
+    const { data: txs, error } = await supabase
       .from('transactions')
       .select('amount, category, date')
       .eq('user_id', user_id);
