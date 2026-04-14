@@ -1,164 +1,155 @@
-// backend/server.js — МИНИМАЛЬНЫЙ РАБОЧИЙ ВАРИАНТ
+// backend/server.js
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 require('dotenv').config();
 
-// === ИНИЦИАЛИЗАЦИЯ ===
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// === MIDDLEWARE (ПОРЯДОК ВАЖЕН!) ===
-// 1. CORS — ДО всех маршрутов, с обработкой preflight
+// Middleware
+app.use(express.json());
 app.use(cors({
-  origin: function(origin, callback) {
-    // Разрешаем запросы без origin (mobile apps, curl)
-    if (!origin) return callback(null, true);
-    
-    // Разрешаем все Vercel домены (preview + production)
-    if (origin.includes('.vercel.app')) return callback(null, true);
-    
-    // Разрешаем localhost для разработки
-    if (origin.includes('localhost')) return callback(null, true);
-    
-    // Разрешаем конкретные домены из env
-    const allowed = [process.env.FRONTEND_URL].filter(Boolean);
-    if (allowed.includes(origin)) return callback(null, true);
-    
-    // Блокируем всё остальное
-    console.log('❌ CORS blocked:', origin);
-    callback(new Error('Not allowed by CORS'));
+  origin: (origin, callback) => {
+    if (!origin || origin.includes('.vercel.app') || origin.includes('localhost')) {
+      return callback(null, true);
+    }
+    callback(new Error('CORS blocked'));
   },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  credentials: true
 }));
 
-// 2. Парсинг JSON — ОБЯЗАТЕЛЬНО перед маршрутами
-app.use(express.json());
-
-// 3. Логирование запросов для отладки
-app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path} from ${req.headers.origin || 'no-origin'}`);
-  next();
-});
-
-// === SUPABASE CLIENT ===
+// Supabase client (используем service role для обхода RLS в MVP)
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
 
-// === HEALTH CHECK (ОБЯЗАТЕЛЬНО для Railway) ===
+// === HEALTH CHECK ===
 app.get('/health', (req, res) => {
-  console.log('✅ Health check requested');
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    node_version: process.version,
-    env: process.env.NODE_ENV
-  });
-});
-
-// === OPTIONS HANDLER для preflight запросов ===
-app.options('*', (req, res) => {
-  console.log('🔍 OPTIONS preflight:', req.path);
-  res.sendStatus(200);
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // === USERS ===
+// Регистрация (упрощённая)
 app.post('/api/v1/users', async (req, res) => {
-  console.log('📥 Registration request body:', req.body);
-  
   try {
-    const { phone, inn, usn_mode, name, crm_id } = req.body;
+    const { phone, inn, usn_mode, name } = req.body;
     
     // Валидация
-    if (!phone || phone.length < 10) {
-      return res.status(400).json({ error: 'Некорректный телефон' });
-    }
-    if (!inn || inn.length !== 12) {
-      return res.status(400).json({ error: 'ИНН должен содержать 12 цифр' });
-    }
-    if (!usn_mode || !['доходы', 'доходы_расходы'].includes(usn_mode)) {
-      return res.status(400).json({ error: 'Некорректный режим УСН' });
-    }
+    if (!phone || phone.length < 10) return res.status(400).json({ error: 'Некорректный телефон' });
+    if (!inn || inn.length !== 12) return res.status(400).json({ error: 'ИНН должен содержать 12 цифр' });
     
-    // Проверка на существующего пользователя
-    const {  existing } = await supabase
+    // Проверка на дубликат
+    const {  existing } = await supabase.from('users').select('id').eq('phone', phone).single();
+    if (existing) return res.status(200).json({ ...existing, message: 'Пользователь уже существует' });
+    
+    // Создание
+    const {  data, error } = await supabase
       .from('users')
-      .select('id')
-      .eq('phone', phone)
-      .single();
+      .insert([{ phone, inn, usn_mode, name: name || 'Пользователь', is_active: true }])
+      .select();
     
-    if (existing) {
-      return res.status(200).json({ ...existing, message: 'Пользователь уже существует' });
-    }
+    if (error) throw error;
+    res.status(201).json(data[0]);
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Получение профиля
+app.get('/api/v1/users/:id', async (req, res) => {
+  try {
+    const {  data, error } = await supabase.from('users').select('*').eq('id', req.params.id).single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// === TRANSACTIONS ===
+// Добавить транзакцию
+app.post('/api/v1/transactions', async (req, res) => {
+  try {
+    const { user_id, date, amount, category, counterparty } = req.body;
     
-    // Создание пользователя
-    const { data, error } = await supabase
-      .from('users')
+    if (!user_id || !amount) return res.status(400).json({ error: 'user_id и amount обязательны' });
+    
+    const {  data, error } = await supabase
+      .from('transactions')
       .insert([{ 
-        phone, 
-        inn, 
-        usn_mode, 
-        name: name || 'Пользователь',
-        crm_id,
-        crm_status: 'new',
-        is_active: true 
+        user_id, 
+        date: date || new Date().toISOString().split('T')[0],
+        amount, 
+        category: category || 'income',
+        counterparty: counterparty || 'Не указано',
+        status: 'confirmed'
       }])
       .select();
     
-    if (error) {
-      console.error('❌ Supabase error:', error);
-      return res.status(400).json({ error: error.message });
-    }
-    
-    console.log('✅ User created:', data[0].id);
+    if (error) throw error;
     res.status(201).json(data[0]);
-  } catch (error) {
-    console.error('❌ Registration error:', error);
-    res.status(400).json({ error: error.message });
+  } catch (err) {
+    console.error('Transaction error:', err);
+    res.status(400).json({ error: err.message });
   }
 });
 
-// GET /api/v1/users/:id
-app.get('/api/v1/users/:id', async (req, res) => {
+// Получить транзакции пользователя
+app.get('/api/v1/transactions/:user_id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { data, error } = await supabase
-      .from('users')
+    const {  data, error } = await supabase
+      .from('transactions')
       .select('*')
-      .eq('id', id)
-      .single();
+      .eq('user_id', req.params.user_id)
+      .order('date', { ascending: false })
+      .limit(10);
     
     if (error) throw error;
-    res.json(data);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.json(data || []);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 
-// === ЗАПУСК СЕРВЕРА ===
-// Слушаем ВСЕ интерфейсы (0.0.0.0), а не только localhost
+// === DASHBOARD METRICS ===
+// Получить метрики для дашборда
+app.get('/api/v1/dashboard/:user_id', async (req, res) => {
+  try {
+    const { user_id } = req.params;
+    
+    // Получаем транзакции
+    const {  txs, error } = await supabase
+      .from('transactions')
+      .select('amount, category, date')
+      .eq('user_id', user_id);
+    
+    if (error) throw error;
+    
+    // Считаем метрики
+    const today = new Date().toISOString().split('T')[0];
+    const todayTxs = txs?.filter(t => t.date === today) || [];
+    
+    const income = todayTxs.filter(t => t.category === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
+    const expense = todayTxs.filter(t => t.category === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+    const net = income - expense;
+    const tax = net * 0.06; // УСН 6%
+    
+    res.json({
+      today_income: income,
+      today_expense: expense,
+      net_today: net,
+      tax_estimate: tax,
+      transaction_count: txs?.length || 0
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Запуск
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`🌍 Listening on 0.0.0.0:${PORT}`);
-});
-
-// === ОБРАБОТЧИКИ ОШИБОК ПРОЦЕССА (чтобы не падал молча) ===
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-  // Не завершаем процесс — даём Railway перезапустить
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-// Graceful shutdown для Railway
-process.on('SIGTERM', () => {
-  console.log('🛑 SIGTERM received, shutting down gracefully');
-  process.exit(0);
 });

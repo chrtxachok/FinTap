@@ -1,57 +1,51 @@
-/* src/index.css — МИНИМАЛЬНЫЕ БАЗОВЫЕ СТИЛИ */
+/* src/index.css */
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Сброс отступов */
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-/* Базовые настройки шрифтов и фона */
 :root {
-  /* Цвета для светлой темы (основная для ФинТап) */
-  --bg-primary: #F9FAFB;      /* Фон страницы */
-  --bg-card: #FFFFFF;         /* Фон карточек */
-  --text-primary: #1F2937;    /* Основной текст */
-  --text-secondary: #6B7280;  /* Вторичный текст */
-  --border: #E5E7EB;          /* Границы */
-  
-  /* Акцентные цвета */
-  --accent: #4F46E5;          /* Основной акцент (фиолетовый) */
-  --accent-hover: #4338CA;    /* Акцент при наведении */
-  --success: #10B981;         /* Успех */
-  --warning: #F59E0B;         /* Предупреждение */
-  --error: #EF4444;           /* Ошибка */
-  
-  /* Шрифты */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --bg: #F9FAFB;
+  --card: #FFFFFF;
+  --text: #1F2937;
+  --text-muted: #6B7280;
+  --accent: #4F46E5;
+  --accent-hover: #4338CA;
+  --success: #10B981;
+  --error: #EF4444;
+  --border: #E5E7EB;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* Базовые стили body */
 body {
-  font-family: var(--font-sans);
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Сброс стилей для #root — пусть компоненты управляют макетом */
-#root {
-  min-height: 100vh;
-  width: 100%;
-}
+#root { min-height: 100vh; }
 
-/* Утилита для скрытия элемента */
-.hidden {
-  display: none !important;
-}
+/* Утилиты */
+.container { max-width: 480px; margin: 0 auto; padding: 20px; }
+.container-wide { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.card { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.btn { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 500; cursor: pointer; width: 100%; }
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { background: #A5B4FC; cursor: not-allowed; }
+.input { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; margin-bottom: 12px; }
+.label { display: block; font-weight: 500; margin-bottom: 4px; color: var(--text); }
+.error { color: var(--error); font-size: 14px; margin: 8px 0; }
+.success { color: var(--success); font-size: 14px; margin: 8px 0; }
+.flex { display: flex; gap: 12px; }
+.flex-col { display: flex; flex-direction: column; gap: 12px; }
+.text-center { text-align: center; }
+.mt-4 { margin-top: 16px; }
 
-/* Адаптивность: скрыть элементы на мобильных/десктопе */
-@media (max-width: 768px) {
-  .desktop-only { display: none !important; }
+/* Адаптив для ПК */
+@media (min-width: 768px) {
+  .container { max-width: 600px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 }
 @media (min-width: 1024px) {
-  .mobile-only { display: none !important; }
+  .container-wide { display: grid; grid-template-columns: 240px 1fr; gap: 24px; }
+  .sidebar { position: sticky; top: 24px; height: fit-content; }
 }
