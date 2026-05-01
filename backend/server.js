@@ -3,6 +3,7 @@ const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 require('dotenv').config();
+import { sendUserToCRM } from './services/crmService.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -87,17 +88,30 @@ app.post('/api/v1/users', async (req, res) => {
     const { data, error } = await supabase
       .from('users')
       .insert([{ 
-        phone, 
-        inn, 
-        usn_mode, 
-        name: name || 'Пользователь', 
-        is_active: true 
-      }])
-      .select()
-      .single();
-    
-    if (error) throw error;
-    res.status(201).json(data);
+    phone, 
+    inn, 
+    usn_mode, 
+    name: name || 'Пользователь', 
+    is_active: true 
+  }])
+  .select()
+  .single();
+
+if (error) throw error;
+
+// 🎯 ОТПРАВКА В CRM — АСИНХРОННО, НЕ БЛОКИРУЯ ОТВЕТ
+sendUserToCRM({
+  id: data.id,
+  name: data.name,
+  phone: data.phone,
+  inn: data.inn,
+  usn_mode: data.usn_mode
+}).catch(err => {
+  console.error('CRM sync failed (non-blocking):', err);
+  // Регистрация успешна, даже если CRM недоступна
+});
+
+res.status(201).json(data);
   } catch (err) {
     console.error('Registration error:', err);
     res.status(400).json({ error: err.message });
