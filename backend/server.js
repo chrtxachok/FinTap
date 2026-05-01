@@ -1,14 +1,13 @@
-// backend/server.js
+// backend/server.js — ПОЛНЫЙ РАБОЧИЙ КОД С CRM
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 require('dotenv').config();
-import { sendUserToCRM } from './services/crmService.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// === MIDDLEWARE ===
 app.use(express.json());
 app.use(cors({
   origin: (origin, callback) => {
@@ -20,11 +19,63 @@ app.use(cors({
   credentials: true
 }));
 
-// Supabase client (используем service role для обхода RLS в MVP)
+// === SUPABASE CLIENT ===
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_KEY
 );
+
+// === CRM SERVICE (встроено, без внешних импортов) ===
+async function sendUserToCRM(userData) {
+  const webhookUrl = process.env.BITRIX24_WEBHOOK_URL;
+  
+  // Если вебхук не настроен — пропускаем
+  if (!webhookUrl) {
+    console.log('⚠️ Bitrix24 webhook not configured - skipping CRM sync');
+    return { skipped: true, reason: 'BITRIX24_WEBHOOK_URL not set' };
+  }
+
+  try {
+    // Маппинг полей: ФинТап → Bitrix24
+    const crmFields = {
+      NAME: userData.name || 'Пользователь ФинТап',
+      PHONE: [{ VALUE: userData.phone, VALUE_TYPE: 'WORK' }],
+      UF_CRM_INN: userData.inn,
+      UF_CRM_USN_MODE: userData.usn_mode,
+      UF_CRM_SOURCE: 'fintap_mvp',
+      COMMENTS: `Регистрация через ФинТап ${new Date().toISOString()}\nУСН: ${userData.usn_mode}`,
+      SOURCE_ID: 'fintap'
+    };
+
+    const payload = {
+      fields: crmFields,
+      params: { REGISTER_SONET_EVENT: 'Y' }
+    };
+
+    const entityType = 'contact'; // или 'lead'
+    
+    const response = await fetch(`${webhookUrl}/crm.${entityType}.add.json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (result.error) {
+      console.error('❌ Bitrix24 API error:', result.error_description);
+      throw new Error(result.error_description || 'Bitrix24 API error');
+    }
+
+    console.log('✅ User sent to CRM:', { userId: userData.id, crmId: result.result });
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Failed to send to CRM:', error.message);
+    // Не пробрасываем ошибку — регистрация не должна ломаться
+    return { error: error.message, synced: false };
+  }
+}
 
 // === HEALTH CHECK ===
 app.get('/health', (req, res) => {
@@ -33,7 +84,7 @@ app.get('/health', (req, res) => {
 
 // === USERS ===
 
-// POST /api/v1/users/check - Проверка существования пользователя
+// POST /api/v1/users/check - Проверка существования
 app.post('/api/v1/users/check', async (req, res) => {
   try {
     const { phone } = req.body;
@@ -60,7 +111,7 @@ app.post('/api/v1/users/check', async (req, res) => {
   }
 });
 
-// Обновить endpoint регистрации (добавить проверку дубликатов):
+// POST /api/v1/users - Регистрация (с отправкой в CRM)
 app.post('/api/v1/users', async (req, res) => {
   try {
     const { phone, inn, usn_mode, name } = req.body;
@@ -84,44 +135,47 @@ app.post('/api/v1/users', async (req, res) => {
       });
     }
     
-    // Создание
+    // Создание пользователя в БД
     const { data, error } = await supabase
       .from('users')
       .insert([{ 
-    phone, 
-    inn, 
-    usn_mode, 
-    name: name || 'Пользователь', 
-    is_active: true 
-  }])
-  .select()
-  .single();
-
-if (error) throw error;
-
-// 🎯 ОТПРАВКА В CRM — АСИНХРОННО, НЕ БЛОКИРУЯ ОТВЕТ
-sendUserToCRM({
-  id: data.id,
-  name: data.name,
-  phone: data.phone,
-  inn: data.inn,
-  usn_mode: data.usn_mode
-}).catch(err => {
-  console.error('CRM sync failed (non-blocking):', err);
-  // Регистрация успешна, даже если CRM недоступна
-});
-
-res.status(201).json(data);
+        phone, 
+        inn, 
+        usn_mode, 
+        name: name || 'Пользователь', 
+        is_active: true 
+      }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    // 🎯 ОТПРАВКА В CRM — АСИНХРОННО, НЕ БЛОКИРУЯ ОТВЕТ
+    sendUserToCRM({
+      id: data.id,
+      name: data.name,
+      phone: data.phone,
+      inn: data.inn,
+      usn_mode: data.usn_mode
+    }).catch(err => {
+      console.error('CRM sync failed (non-blocking):', err);
+    });
+    
+    res.status(201).json(data);
   } catch (err) {
     console.error('Registration error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// Получение профиля
+// GET /api/v1/users/:id - Профиль
 app.get('/api/v1/users/:id', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('users').select('*').eq('id', req.params.id).single();
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -130,7 +184,6 @@ app.get('/api/v1/users/:id', async (req, res) => {
 });
 
 // === TRANSACTIONS ===
-// Добавить транзакцию
 app.post('/api/v1/transactions', async (req, res) => {
   try {
     const { user_id, date, amount, category, counterparty } = req.body;
@@ -158,7 +211,6 @@ app.post('/api/v1/transactions', async (req, res) => {
   }
 });
 
-// Получить транзакции пользователя
 app.get('/api/v1/transactions/:user_id', async (req, res) => {
   try {
     const { data, error } = await supabase
@@ -176,12 +228,10 @@ app.get('/api/v1/transactions/:user_id', async (req, res) => {
 });
 
 // === DASHBOARD METRICS ===
-// Получить метрики для дашборда
 app.get('/api/v1/dashboard/:user_id', async (req, res) => {
   try {
     const { user_id } = req.params;
     
-    // Получаем транзакции
     const { data: txs, error } = await supabase
       .from('transactions')
       .select('amount, category, date')
@@ -189,12 +239,13 @@ app.get('/api/v1/dashboard/:user_id', async (req, res) => {
     
     if (error) throw error;
     
-    // Считаем метрики
     const today = new Date().toISOString().split('T')[0];
     const todayTxs = txs?.filter(t => t.date === today) || [];
     
-    const income = todayTxs.filter(t => t.category === 'income').reduce((sum, t) => sum + Number(t.amount), 0);
-    const expense = todayTxs.filter(t => t.category === 'expense').reduce((sum, t) => sum + Number(t.amount), 0);
+    const income = todayTxs.filter(t => t.category === 'income')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const expense = todayTxs.filter(t => t.category === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
     const net = income - expense;
     const tax = net * 0.06; // УСН 6%
     
@@ -210,7 +261,8 @@ app.get('/api/v1/dashboard/:user_id', async (req, res) => {
   }
 });
 
-// Запуск
+// === ЗАПУСК СЕРВЕРА ===
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔗 Health: http://localhost:${PORT}/health`);
 });
