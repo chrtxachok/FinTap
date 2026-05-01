@@ -1,8 +1,11 @@
-// backend/server.js — ПОЛНЫЙ РАБОЧИЙ КОД С CRM
-const express = require('express');
-const { createClient } = require('@supabase/supabase-js');
-const cors = require('cors');
-require('dotenv').config();
+// backend/server.js — ПОЛНЫЙ КОД С ES MODULE СИНТАКСИСОМ
+import express from 'express';
+import { createClient } from '@supabase/supabase-js';
+import cors from 'cors';
+import dotenv from 'dotenv';
+
+// Загрузка переменных окружения
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,18 +28,16 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
-// === CRM SERVICE (встроено, без внешних импортов) ===
+// === CRM SERVICE (встроено) ===
 async function sendUserToCRM(userData) {
   const webhookUrl = process.env.BITRIX24_WEBHOOK_URL;
   
-  // Если вебхук не настроен — пропускаем
   if (!webhookUrl) {
     console.log('⚠️ Bitrix24 webhook not configured - skipping CRM sync');
     return { skipped: true, reason: 'BITRIX24_WEBHOOK_URL not set' };
   }
 
   try {
-    // Маппинг полей: ФинТап → Bitrix24
     const crmFields = {
       NAME: userData.name || 'Пользователь ФинТап',
       PHONE: [{ VALUE: userData.phone, VALUE_TYPE: 'WORK' }],
@@ -52,7 +53,7 @@ async function sendUserToCRM(userData) {
       params: { REGISTER_SONET_EVENT: 'Y' }
     };
 
-    const entityType = 'contact'; // или 'lead'
+    const entityType = 'contact';
     
     const response = await fetch(`${webhookUrl}/crm.${entityType}.add.json`, {
       method: 'POST',
@@ -72,7 +73,6 @@ async function sendUserToCRM(userData) {
     
   } catch (error) {
     console.error('❌ Failed to send to CRM:', error.message);
-    // Не пробрасываем ошибку — регистрация не должна ломаться
     return { error: error.message, synced: false };
   }
 }
@@ -93,7 +93,7 @@ app.post('/api/v1/users/check', async (req, res) => {
       return res.status(400).json({ error: 'Некорректный телефон' });
     }
     
-    const { data: user, error } = await supabase
+    const {  user, error } = await supabase
       .from('users')
       .select('id, phone, inn, usn_mode, name')
       .eq('phone', phone)
@@ -116,12 +116,10 @@ app.post('/api/v1/users', async (req, res) => {
   try {
     const { phone, inn, usn_mode, name } = req.body;
     
-    // Валидация
     if (!phone || phone.length < 10) return res.status(400).json({ error: 'Некорректный телефон' });
     if (!inn || inn.length !== 12) return res.status(400).json({ error: 'ИНН должен содержать 12 цифр' });
     
-    // Проверка на дубликат
-    const { data: existing, error: existingError } = await supabase
+    const {  existing, error: existingError } = await supabase
       .from('users')
       .select('id')
       .eq('phone', phone)
@@ -135,7 +133,6 @@ app.post('/api/v1/users', async (req, res) => {
       });
     }
     
-    // Создание пользователя в БД
     const { data, error } = await supabase
       .from('users')
       .insert([{ 
@@ -150,7 +147,7 @@ app.post('/api/v1/users', async (req, res) => {
     
     if (error) throw error;
     
-    // 🎯 ОТПРАВКА В CRM — АСИНХРОННО, НЕ БЛОКИРУЯ ОТВЕТ
+    // 🎯 ОТПРАВКА В CRM — АСИНХРОННО
     sendUserToCRM({
       id: data.id,
       name: data.name,
@@ -232,7 +229,7 @@ app.get('/api/v1/dashboard/:user_id', async (req, res) => {
   try {
     const { user_id } = req.params;
     
-    const { data: txs, error } = await supabase
+    const {  txs, error } = await supabase
       .from('transactions')
       .select('amount, category, date')
       .eq('user_id', user_id);
@@ -247,7 +244,7 @@ app.get('/api/v1/dashboard/:user_id', async (req, res) => {
     const expense = todayTxs.filter(t => t.category === 'expense')
       .reduce((sum, t) => sum + Number(t.amount), 0);
     const net = income - expense;
-    const tax = net * 0.06; // УСН 6%
+    const tax = net * 0.06;
     
     res.json({
       today_income: income,
