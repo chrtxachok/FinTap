@@ -38,6 +38,7 @@ async function sendUserToCRM(userData) {
   }
 
   try {
+    /*
     const crmFields = {
       NAME: userData.name || 'Пользователь ФинТап',
       PHONE: [{ VALUE: userData.phone, VALUE_TYPE: 'WORK' }],
@@ -47,7 +48,13 @@ async function sendUserToCRM(userData) {
       COMMENTS: `Регистрация через ФинТап ${new Date().toISOString()}\nУСН: ${userData.usn_mode}`,
       SOURCE_ID: 'fintap'
     };
-
+    */
+    
+    const crmFields = {
+  NAME: userData.name || 'Пользователь ФинТап',
+  PHONE: [{ VALUE: userData.phone, VALUE_TYPE: 'WORK' }],
+  COMMENTS: `ИНН: ${userData.inn}\nУСН: ${userData.usn_mode}\nИсточник: fintap_mvp`
+};
     const payload = {
       fields: crmFields,
       params: { REGISTER_SONET_EVENT: 'Y' }
